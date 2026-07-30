@@ -749,6 +749,461 @@ button {
   color: #ef4444;
 }
 
+/* ============== Skill 切换器 ============== */
+.skill-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 28px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid rgba(238, 240, 244, 0.6);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.skill-bar::-webkit-scrollbar { display: none; }
+.skill-bar__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 13px;
+  color: #4e5969;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s;
+  flex-shrink: 0;
+}
+.skill-bar__item:hover {
+  background: rgba(77, 107, 254, 0.06);
+  color: #4d6bfe;
+}
+.skill-bar__item.is-active {
+  background: linear-gradient(135deg, rgba(77, 107, 254, 0.12), rgba(123, 92, 255, 0.12));
+  color: #4d6bfe;
+  border-color: rgba(77, 107, 254, 0.2);
+  font-weight: 500;
+}
+.skill-bar__icon {
+  font-size: 14px;
+}
+
+/* ============== 消息交互按钮（点赞/点踩 active 态） ============== */
+.msg__actions .ant-btn.is-active {
+  color: #4d6bfe;
+  background: rgba(77, 107, 254, 0.08);
+}
+.msg__actions .ant-btn.is-active.is-dislike {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+/* ============== 思维链卡片 ============== */
+.part-thinking {
+  width: 100%;
+  border: 1px solid rgba(77, 107, 254, 0.15);
+  background: linear-gradient(135deg, rgba(77, 107, 254, 0.04), rgba(123, 92, 255, 0.04));
+  border-radius: 10px;
+  margin: 6px 0;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+.part-thinking.is-open {
+  background: linear-gradient(135deg, rgba(77, 107, 254, 0.08), rgba(123, 92, 255, 0.08));
+}
+.part-thinking__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  color: #4d6bfe;
+}
+.part-thinking__icon { font-size: 14px; }
+.part-thinking__label { font-weight: 500; }
+.part-thinking__meta {
+  color: #9ca3af;
+  font-size: 12px;
+  margin-left: auto;
+}
+.part-thinking__caret {
+  font-size: 12px;
+  transition: transform 0.2s;
+  color: #9ca3af;
+}
+.part-thinking.is-open .part-thinking__caret {
+  transform: rotate(90deg);
+}
+.part-thinking__body {
+  padding: 6px 14px 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #4e5969;
+  white-space: pre-wrap;
+  border-top: 1px dashed rgba(77, 107, 254, 0.15);
+  margin-top: 2px;
+  padding-top: 10px;
+}
+
+/* ============== 引用来源卡片 ============== */
+.part-citation {
+  width: 100%;
+  border: 1px solid #e6e8ee;
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 6px 0;
+  background: #fafbfc;
+}
+.part-citation__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #fff;
+  border-bottom: 1px solid #e6e8ee;
+  font-size: 12px;
+  color: #4e5969;
+  font-weight: 500;
+}
+.part-citation__list {
+  display: flex;
+  flex-direction: column;
+}
+.part-citation__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #1d2129;
+  text-decoration: none;
+  border-bottom: 1px solid #f0f1f4;
+  transition: background 0.15s;
+}
+.part-citation__item:last-child { border-bottom: none; }
+.part-citation__item:hover { background: #f5f7fb; }
+.part-citation__num {
+  color: #4d6bfe;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.part-citation__title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.part-citation__src {
+  color: #9ca3af;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.part-citation__link {
+  color: #9ca3af;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+/* ============== 独立代码块卡片 ============== */
+.part-code {
+  width: 100%;
+  border: 1px solid #e6e8ee;
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 6px 0;
+  background: #0d1117;
+}
+.part-code__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #161b22;
+  border-bottom: 1px solid #21262d;
+}
+.part-code__lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #8b949e;
+  font-size: 12px;
+  font-weight: 500;
+}
+.part-code__actions { display: flex; gap: 4px; }
+.part-code__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #8b949e;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.part-code__btn:hover { background: #21262d; color: #fff; border-color: #8b949e; }
+.part-code__pre {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #c9d1d9;
+  background: transparent;
+}
+.part-code__pre code { background: transparent; color: inherit; padding: 0; font-size: inherit; }
+
+/* ============== 图表卡片 ============== */
+.part-chart {
+  width: 100%;
+  border: 1px solid #e6e8ee;
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 6px 0;
+  background: #fff;
+}
+.part-chart__title {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1d2129;
+  border-bottom: 1px solid #f0f1f4;
+}
+.part-chart__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 280px;
+  padding: 8px;
+}
+.part-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 14px 12px;
+  border-top: 1px solid #f0f1f4;
+  font-size: 12px;
+  color: #4e5969;
+}
+.part-chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.part-chart__legend-item i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* ============== 推荐追问 ============== */
+.part-suggestion {
+  width: 100%;
+  margin: 12px 0 4px;
+}
+.part-suggestion__head {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 6px;
+  padding-left: 2px;
+}
+.part-suggestion__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.part-suggestion__chip {
+  display: inline-block;
+  padding: 6px 14px;
+  background: rgba(77, 107, 254, 0.06);
+  border: 1px solid rgba(77, 107, 254, 0.15);
+  border-radius: 999px;
+  color: #4d6bfe;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.18s;
+  text-align: left;
+}
+.part-suggestion__chip:hover {
+  background: rgba(77, 107, 254, 0.12);
+  border-color: #4d6bfe;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(77, 107, 254, 0.12);
+}
+
+/* ============== 工具调用卡片 ============== */
+.part-fc {
+  width: 100%;
+  border: 1px solid #e6e8ee;
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 6px 0;
+  background: #fafbfc;
+  transition: all 0.2s;
+}
+.part-fc--running { border-color: rgba(77, 107, 254, 0.4); background: linear-gradient(135deg, rgba(77, 107, 254, 0.04), rgba(123, 92, 255, 0.04)); }
+.part-fc--done { border-color: rgba(34, 197, 94, 0.3); }
+.part-fc--error { border-color: rgba(239, 68, 68, 0.3); }
+.part-fc__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 14px;
+  background: #fff;
+  border: none;
+  border-bottom: 1px solid #f0f1f4;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+}
+.part-fc__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+}
+.part-fc__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9ca3af;
+}
+.part-fc__name {
+  flex: 1;
+  color: #1d2129;
+  font-weight: 500;
+}
+.part-fc__name code {
+  background: rgba(77, 107, 254, 0.08);
+  color: #4d6bfe;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+.part-fc__state {
+  color: #6b7280;
+  font-size: 12px;
+}
+.part-fc__caret {
+  color: #9ca3af;
+  font-size: 12px;
+  transition: transform 0.2s;
+}
+.part-fc__body { padding: 0 14px 12px; }
+.part-fc__section { margin-top: 10px; }
+.part-fc__label {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.part-fc__pre {
+  margin: 0;
+  padding: 8px 10px;
+  background: #f5f7fb;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #1d2129;
+  overflow-x: auto;
+  white-space: pre;
+}
+.part-fc__err {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 4px;
+  color: #ef4444;
+  font-size: 12px;
+}
+
+/* ============== 对比卡片 ============== */
+.part-comparison {
+  width: 100%;
+  margin: 6px 0;
+}
+.part-comparison__title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1d2129;
+  margin-bottom: 8px;
+  padding-left: 2px;
+}
+.part-comparison__grid {
+  display: grid;
+  gap: 10px;
+}
+.part-comparison__grid--2 { grid-template-columns: repeat(2, 1fr); }
+.part-comparison__grid--3 { grid-template-columns: repeat(3, 1fr); }
+.part-comparison__grid--4 { grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 600px) {
+  .part-comparison__grid--4 { grid-template-columns: repeat(4, 1fr); }
+}
+.part-comparison__item {
+  border: 1px solid #e6e8ee;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: all 0.18s;
+}
+.part-comparison__item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+}
+.part-comparison__item.is-highlight {
+  border-color: #4d6bfe;
+  background: linear-gradient(135deg, rgba(77, 107, 254, 0.05), rgba(123, 92, 255, 0.05));
+  box-shadow: 0 4px 12px rgba(77, 107, 254, 0.08);
+}
+.part-comparison__icon {
+  font-size: 22px;
+  line-height: 1;
+}
+.part-comparison__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d2129;
+}
+.part-comparison__value {
+  font-size: 13px;
+  color: #4d6bfe;
+  font-weight: 500;
+}
+.part-comparison__desc {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+/* ============== 图片卡片 caption ============== */
+.part-image__caption {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6b7280;
+  text-align: center;
+}
+
 /* ============== 响应式 ============== */
 @media (max-width: 768px) {
   .sidebar {

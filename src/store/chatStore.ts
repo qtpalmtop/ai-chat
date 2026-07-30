@@ -8,7 +8,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { nanoid } from 'nanoid';
-import type { Message, MessagePart, Session, MessageStatus } from '@/types/message';
+import type { Message, MessagePart, Session, MessageStatus, MessageFeedback } from '@/types/message';
 
 interface ChatState {
   sessions: Record<string, Session>;
@@ -34,6 +34,13 @@ interface ChatState {
   finalizeStream: (sessionId: string, messageId: string) => void;
   /** 主动打断流式：同 finalizeStream，但 status 置为 'interrupted'（用户主动停止 / 被新消息打断） */
   interruptStream: (sessionId: string, messageId: string) => void;
+  /** 设置消息反馈（点赞/点踩/取消） */
+  setMessageFeedback: (sessionId: string, messageId: string, feedback: MessageFeedback) => void;
+  /** 删除指定 message 之后的所有 AI 消息（用于"重新生成"场景） */
+  truncateAfter: (sessionId: string, messageId: string) => void;
+  /** 当前激活的 Skill id（深度思考/联网/翻译/...） */
+  activeSkillId: string | null;
+  setActiveSkill: (id: string | null) => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -44,7 +51,9 @@ export const useChatStore = create<ChatState>()(
       messages: {},
       currentSessionId: null,
       hasHydrated: false,
+      activeSkillId: null,
       setHasHydrated: (v) => set({ hasHydrated: v }),
+      setActiveSkill: (id) => set({ activeSkillId: id }),
 
       createSession: (title) => {
         const id = nanoid(10);
@@ -135,6 +144,23 @@ export const useChatStore = create<ChatState>()(
         set((s) =>
           updateMessageInList(s, sessionId, messageId, (m) => closeStream(m, 'interrupted')),
         );
+      },
+
+      setMessageFeedback: (sessionId, messageId, feedback) => {
+        set((s) =>
+          updateMessageInList(s, sessionId, messageId, (m) => ({ ...m, feedback })),
+        );
+      },
+
+      /** 删除 messageId 之后的所有消息（用于"重新生成"：截掉旧 AI 回答，再触发一次 send） */
+      truncateAfter: (sessionId, messageId) => {
+        set((s) => {
+          const list = s.messages[sessionId];
+          if (!list) return s;
+          const idx = list.findIndex((m) => m.id === messageId);
+          if (idx === -1) return s;
+          return { messages: { ...s.messages, [sessionId]: list.slice(0, idx + 1) } };
+        });
       },
     }),
     {

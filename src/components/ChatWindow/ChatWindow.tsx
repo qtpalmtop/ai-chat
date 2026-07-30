@@ -1,6 +1,6 @@
 /**
  * 主对话区
- * - 顶部 Header（标题 / 清空）
+ * - 顶部 Header（标题 / Skill 切换器 / 操作菜单）
  * - 消息列表（**虚拟列表**：离屏 DOM 释放，100+ 条消息也流畅）
  * - 输入区
  * - 历史会话进入：useLayoutEffect 同步 scrollTo，浏览器 paint 前完成定位，
@@ -16,11 +16,13 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { Button, App, Dropdown } from 'antd';
 import { DeleteOutlined, MoreOutlined, CodeOutlined, CopyOutlined } from '@ant-design/icons';
 import { useChatStore, useCurrentSession, useCurrentMessages } from '@/store/chatStore';
+import { useChat } from '@/hooks/useChat';
 import useIsomorphicLayoutEffect from '@/hooks/useIsomorphicLayoutEffect';
 import { MessageItem } from '@/components/MessageItem/MessageItem';
 import { InputPanel, WelcomePanel } from '@/components/InputPanel/InputPanel';
 import { Sidebar } from '@/components/Sidebar/Sidebar';
 import { MessageVirtualList } from '@/components/MessageVirtualList/MessageVirtualList';
+import { SkillBar } from '@/components/SkillBar/SkillBar';
 import type { Message } from '@/types/message';
 
 export const ChatWindow: React.FC = () => {
@@ -147,14 +149,53 @@ export const ChatWindow: React.FC = () => {
     [message],
   );
 
+  const { regenerate } = useChat();
+
+  // 点击推荐追问 chip：把它作为新消息发出（与豆包"点击推荐追问直接发送"行为一致）
+  const onSuggestionPick = useCallback(
+    (s: string) => {
+      // 直接通过 store + useChat 的公共方法发送
+      const state = useChatStore.getState();
+      if (!state.currentSessionId) state.createSession('新对话');
+      // 拿到最新 sendMessage
+      useChatStore.getState(); // 占位，避免 lint 警告
+      // 简单做法：触发一次全局事件，InputPanel 监听后写入并发送
+      // 但更直接：通过 useChat hook 拿 sendMessage 不易（hook 只能在组件顶层用）
+      // 这里用 store 里暴露的 addUserMessageAndSend 风格的辅助：暂用自定义事件
+      window.dispatchEvent(new CustomEvent('doubao:send-suggestion', { detail: s }));
+    },
+    [],
+  );
+
+  const onRegenerate = useCallback(
+    (m: Message) => {
+      regenerate(m);
+    },
+    [regenerate],
+  );
+
   // MessageItem 已被 React.memo 包裹，render fn 必须稳定引用，否则 props.onCopy 抖动会让所有项重渲染
   const renderItem = useCallback(
-    (m: Message) => <MessageItem message={m} onCopy={onCopy} />,
-    [onCopy],
+    (m: Message) => (
+      <MessageItem
+        message={m}
+        onCopy={onCopy}
+        onSuggestionPick={onSuggestionPick}
+        onRegenerate={onRegenerate}
+      />
+    ),
+    [onCopy, onSuggestionPick, onRegenerate],
   );
   const renderStreaming = useCallback(
-    (m: Message) => <MessageItem message={m} onCopy={onCopy} />,
-    [onCopy],
+    (m: Message) => (
+      <MessageItem
+        message={m}
+        onCopy={onCopy}
+        onSuggestionPick={onSuggestionPick}
+        onRegenerate={onRegenerate}
+      />
+    ),
+    [onCopy, onSuggestionPick, onRegenerate],
   );
   const getKey = useCallback((m: Message) => m.id, []);
 
@@ -214,6 +255,8 @@ export const ChatWindow: React.FC = () => {
             </Dropdown>
           </div>
         </header>
+
+        <SkillBar />
 
         <div className="main__body" ref={listRef} onScroll={onScroll}>
           {(!session || (messages.length === 0 && !streamingMessage)) ? (

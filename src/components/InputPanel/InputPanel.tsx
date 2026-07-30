@@ -11,7 +11,7 @@
  *       messages 内部未变（其他会话或 pendingText）时不会重渲染
  */
 
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import {
   Button,
   Input,
@@ -41,12 +41,13 @@ interface Attachment {
   mime?: string;
 }
 
-const WELCOME = '你好，我是豆包 👋 试试问我：写一个 React Hook 例子 / 用 Markdown 做个表格 / 上传一张图片';
+const WELCOME = '你好，我是豆包 👋 试试问我：写一个 React Hook 例子 / 用图表展示销售占比 / 深度思考 2024 营收趋势';
 const SUGGESTIONS = [
   '写一个 React Hook 例子',
-  '用 Markdown 表格对比 Vue 与 React',
-  '解释一下 SSE 流式原理',
-  '上传一张图片描述它',
+  '深度思考：2024 年营收趋势',
+  '用图表展示销售占比',
+  '对比 iPhone / 华为 / 小米',
+  '北京今天天气',
 ];
 
 export const InputPanel: React.FC = () => {
@@ -148,6 +149,22 @@ export const InputPanel: React.FC = () => {
     setText('');
     setAttachments([]);
   };
+
+  /**
+   * 监听"推荐追问" chip 点击事件
+   * - ChatWindow 通过 window.dispatchEvent('doubao:send-suggestion', { detail: s })
+   * - 这里直接调用 sendMessage（不写入输入框）——与豆包行为一致：点 chip 立刻追问
+   */
+  useEffect(() => {
+    const onSuggestion = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (typeof detail === 'string' && detail.trim()) {
+        sendMessage(detail, { images: [], files: [] });
+      }
+    };
+    window.addEventListener('doubao:send-suggestion', onSuggestion as EventListener);
+    return () => window.removeEventListener('doubao:send-suggestion', onSuggestion as EventListener);
+  }, [sendMessage]);
 
   return (
     <div className="input-panel">

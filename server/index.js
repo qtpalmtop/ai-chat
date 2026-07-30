@@ -32,7 +32,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer as createViteServer } from 'vite';
-import { pickResponse, splitIntoChunks } from './mock.js';
+import { pickResponse, splitPartsIntoChunks, runMockTool } from './mock.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -117,8 +117,10 @@ router.get('/api/health', (ctx) => {
 
 router.get('/api/chat/sse', async (ctx) => {
   const prompt = ctx.query.prompt || '';
+  const skill = ctx.query.skill || '';
   const answer = pickResponse(prompt);
-  const chunks = splitIntoChunks(answer);
+  // 卡片 part + 文本 part 一并流式：splitPartsIntoChunks 区分对待
+  const chunks = splitPartsIntoChunks(answer.parts || []);
   const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
   // SSE 头
@@ -147,6 +149,32 @@ router.get('/api/chat/sse', async (ctx) => {
   // 初始 comment
   res.write(': connected\n\n');
 
+  // 优先把 function_call 状态变更实时推送：
+  // 1) 先推 'running' 状态（pending）
+  // 2) 真实 runMockTool 计算
+  // 3) 再推 'done' 状态（带 result）
+  // 让客户端在流式过程中能看到"加载中 → 完成"的状态切换
+  const handleChunk = (chunk) => {
+    if (chunk.type === 'function_call') {
+      // pending
+      send('message', {
+        type: 'function_call',
+        call: { ...chunk.call, status: 'running', result: undefined },
+      });
+      // 实际执行（mock）— 同步 API，但用 setTimeout 0 模拟"调用耗时"
+      setTimeout(() => {
+        if (closed) return;
+        const result = runMockTool(chunk.call.name, chunk.call.args);
+        send('message', {
+          type: 'function_call',
+          call: { ...chunk.call, status: 'done', result },
+        });
+      }, 250);
+    } else {
+      send('message', chunk);
+    }
+  };
+
   let i = 0;
   const tick = () => {
     if (closed || i >= chunks.length) {
@@ -154,7 +182,7 @@ router.get('/api/chat/sse', async (ctx) => {
       try { res.end(); } catch {}
       return;
     }
-    send('message', { type: 'text', content: chunks[i] });
+    handleChunk(chunks[i]);
     i += 1;
     setTimeout(tick, 20 + Math.random() * 40);
   };

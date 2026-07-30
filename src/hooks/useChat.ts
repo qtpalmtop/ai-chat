@@ -139,6 +139,7 @@ export function useChat() {
 
     // 6) 建立 EventSource
     const params = new URLSearchParams({ prompt: text || '你好' });
+    if (state.activeSkillId) params.set('skill', state.activeSkillId);
     const es = new EventSource(`/api/chat/sse?${params.toString()}`);
     abortMap.set(sessionId, () => es.close());
 
@@ -235,12 +236,11 @@ export function useChat() {
             schedulePendingUpdate();
             scheduleFlush();
             break;
+          // 任何非文本 part：先 flush 当前 markdown buffer，再 append part
+          // 一次性卡片（thinking / citation / code / chart / suggestion / comparison）
+          // 整个作为一个 part 推入
           case 'image':
-            onNonTextBoundary({
-              type: 'image',
-              url: payload.url,
-              alt: payload.alt,
-            });
+            onNonTextBoundary({ type: 'image', url: payload.url, alt: payload.alt, caption: payload.caption });
             break;
           case 'file':
             onNonTextBoundary({
@@ -248,8 +248,39 @@ export function useChat() {
               name: payload.name,
               size: payload.size,
               url: payload.url,
-              mime: undefined,
+              mime: payload.mime,
             });
+            break;
+          case 'thinking':
+            onNonTextBoundary({ type: 'thinking', content: payload.content, durationMs: payload.durationMs });
+            break;
+          case 'citation':
+            onNonTextBoundary({ type: 'citation', sources: payload.sources });
+            break;
+          case 'code':
+            onNonTextBoundary({
+              type: 'code',
+              language: payload.language,
+              content: payload.content,
+              filename: payload.filename,
+            });
+            break;
+          case 'chart':
+            onNonTextBoundary({
+              type: 'chart',
+              chartType: payload.chartType,
+              title: payload.title,
+              data: payload.data,
+            });
+            break;
+          case 'suggestion':
+            onNonTextBoundary({ type: 'suggestion', items: payload.items });
+            break;
+          case 'function_call':
+            onNonTextBoundary({ type: 'function_call', call: payload.call });
+            break;
+          case 'comparison':
+            onNonTextBoundary({ type: 'comparison', title: payload.title, items: payload.items });
             break;
           // 'done' 走单独事件，不在这里处理
         }
@@ -269,21 +300,62 @@ export function useChat() {
     });
 
     es.addEventListener('error', () => {
-      cancelPendingUpdate();
-      if (!flushed) {
-        // 避免覆盖已经被 stop() / 新消息打断 设定的 'interrupted' 状态
-        // 关闭 EventSource 也会触发 'error'，这时不应该把已打断的消息再标成 'error'
-        const cur = useChatStore.getState().messages[sessionId]?.find((m) => m.id === aiMsgId);
-        if (cur && cur.status !== 'interrupted' && cur.status !== 'done') {
-          useChatStore.getState().updateMessageStatus(sessionId, aiMsgId, 'error');
+        cancelPendingUpdate();
+        if (!flushed) {
+          // 避免覆盖已经被 stop() / 新消息打断 设定的 'interrupted' 状态
+          // 关闭 EventSource 也会触发 'error'，这时不应该把已打断的消息再标成 'error'
+          const cur = useChatStore.getState().messages[sessionId]?.find((m) => m.id === aiMsgId);
+          if (cur && cur.status !== 'interrupted' && cur.status !== 'done') {
+            useChatStore.getState().updateMessageStatus(sessionId, aiMsgId, 'error');
+          }
         }
-      }
-      es.close();
-      abortMap.delete(sessionId);
-    });
-  }, []);
+        es.close();
+        abortMap.delete(sessionId);
+      });
+    },
+    [],
+  );
 
-  return { sendMessage, stop };
+  /**
+   * 重新生成：把 AI 消息对应的上一条 user 消息之后的内容截掉，再用同样的文本/附件触发一次新生成
+   * - 入参：被"重新生成"按钮所在的那条 AI 消息
+   * - 实现：从 messages[sessionId] 中找到该 AI 消息的 index，取 index-1 的 user message
+   * - truncateAfter(userId) → 留下 [..., user]
+   * - sendMessage(user 的文本, user 的附件) → 重新走一遍 sendMessage 流程
+   */
+  const regenerate = useCallback((aiMessage: Message) => {
+    const state = useChatStore.getState();
+    const sessionId = aiMessage.sessionId;
+    const list = state.messages[sessionId];
+    if (!list) return;
+    const idx = list.findIndex((m) => m.id === aiMessage.id);
+    if (idx <= 0) return;
+    const userMsg = list[idx - 1];
+    if (userMsg.role !== 'user') return;
+
+    // 先截断（移除当前 AI 消息及其后所有内容）
+    state.truncateAfter(sessionId, userMsg.id);
+
+    // 再用同样的输入触发一次新的 send
+    const text = userMsg.parts
+      .filter((p) => p.type === 'text')
+      .map((p) => (p as Extract<MessagePart, { type: 'text' }>).content)
+      .join('');
+    const images = userMsg.parts
+      .filter((p) => p.type === 'image')
+      .map((p) => ({ url: (p as Extract<MessagePart, { type: 'image' }>).url, alt: (p as Extract<MessagePart, { type: 'image' }>).alt }));
+    const files = userMsg.parts
+      .filter((p) => p.type === 'file')
+      .map((p) => {
+        const f = p as Extract<MessagePart, { type: 'file' }>;
+        return { name: f.name, size: f.size, url: f.url, mime: f.mime };
+      });
+
+    // 重新调用自己（state 已更新，sendMessage 内部会读到正确的 currentSessionId）
+    sendMessage(text, { images, files });
+  }, [sendMessage]);
+
+  return { sendMessage, stop, regenerate };
 }
 
 // ---------- 内部工具（与 store 中的同名工具保持独立：这是 setState 内联回调，需要返回 Partial<State>） ----------

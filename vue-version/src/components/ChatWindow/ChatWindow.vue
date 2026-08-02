@@ -12,10 +12,12 @@ import { Button, Dropdown, message as antdMsg } from 'ant-design-vue';
 import { DeleteOutlined, MoreOutlined, CodeOutlined, CopyOutlined } from '@ant-design/icons-vue';
 import { storeToRefs } from 'pinia';
 import { useChatStore } from '@/stores/chatStore';
+import { useChat } from '@/composables/useChat';
 import MessageItem from '@/components/MessageItem/MessageItem.vue';
 import InputPanel from '@/components/InputPanel/InputPanel.vue';
 import Sidebar from '@/components/Sidebar/Sidebar.vue';
 import MessageVirtualList from '@/components/MessageVirtualList/MessageVirtualList.vue';
+import SkillBar from '@/components/SkillBar/SkillBar.vue';
 import type { MenuProps } from 'ant-design-vue';
 import type { Message } from '@/types/message';
 
@@ -29,6 +31,14 @@ const SUGGESTIONS = [
 
 const store = useChatStore();
 const { currentMessages, currentSession, hasHydrated } = storeToRefs(store);
+const { regenerate } = useChat();
+
+const handleRegenerate = (m: Message) => regenerate(m);
+
+/** 推荐追问 chip 点击：触发全局事件，由 InputPanel 监听后真正发送 */
+const handleSuggestionPick = (s: string) => {
+  window.dispatchEvent(new CustomEvent('doubao:send-suggestion', { detail: s }));
+};
 
 // 拆分消息：已完成 + 流式中
 const splitMessages = computed(() => {
@@ -132,6 +142,8 @@ const dropdownItems = computed<NonNullable<MenuProps['items']>>(() => [
         </div>
       </header>
 
+      <SkillBar />
+
       <div class="main__body" ref="listRef">
         <div
           v-if="!currentSession || (currentMessages.length === 0 && !streamingMessage)"
@@ -167,10 +179,20 @@ const dropdownItems = computed<NonNullable<MenuProps['items']>>(() => [
           follow-streaming
         >
           <template #item="{ item }">
-            <MessageItem :message="item" @copy="onCopy" />
+            <MessageItem
+              :message="item"
+              :on-suggestion-pick="handleSuggestionPick"
+              @copy="onCopy"
+              @regenerate="handleRegenerate"
+            />
           </template>
           <template #streaming="{ item }">
-            <MessageItem :message="item" @copy="onCopy" />
+            <MessageItem
+              :message="item"
+              :on-suggestion-pick="handleSuggestionPick"
+              @copy="onCopy"
+              @regenerate="handleRegenerate"
+            />
           </template>
         </MessageVirtualList>
       </div>

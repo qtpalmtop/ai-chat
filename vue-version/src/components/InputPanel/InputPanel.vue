@@ -13,7 +13,7 @@
  *   - store 变化自动驱动组件
  */
 
-import { ref, computed, nextTick } from 'vue';
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
 import {
   Button,
   Input,
@@ -31,10 +31,29 @@ import {
   CodeOutlined,
   UnorderedListOutlined,
   ClearOutlined,
+  ThunderboltOutlined,
+  GlobalOutlined,
+  TranslationOutlined,
+  EditOutlined,
+  CodeSandboxOutlined,
+  BarChartOutlined,
+  CloseOutlined,
 } from '@ant-design/icons-vue';
 import { storeToRefs } from 'pinia';
 import { useChat } from '@/composables/useChat';
 import { useChatStore } from '@/stores/chatStore';
+import { SKILLS } from '@/components/SkillBar/skills';
+import type { SkillMeta } from '@/types/message';
+
+const SKILL_ICONS: Record<string, any> = {
+  default: ThunderboltOutlined,
+  thinking: ThunderboltOutlined,
+  web: GlobalOutlined,
+  translate: TranslationOutlined,
+  writer: EditOutlined,
+  coder: CodeSandboxOutlined,
+  analyst: BarChartOutlined,
+};
 
 interface Attachment {
   kind: 'image' | 'file';
@@ -54,7 +73,8 @@ const SUGGESTIONS = [
 
 const { sendMessage, stop } = useChat();
 const store = useChatStore();
-const { currentSessionId, messages } = storeToRefs(store);
+const { currentSessionId, messages, activeSkillId } = storeToRefs(store);
+const setActiveSkill = (id: string | null) => store.setActiveSkill(id);
 
 // 流式状态完全按"当前会话"的消息状态判定
 const isStreaming = computed(() => {
@@ -63,9 +83,13 @@ const isStreaming = computed(() => {
   return !!list?.some((m) => m.status === 'streaming');
 });
 
+const activeSkill = computed<SkillMeta>(() => SKILLS.find((s) => s.id === (activeSkillId.value || 'default')) || SKILLS[0]);
+
 const text = ref('');
 const attachments = ref<Attachment[]>([]);
+const showSkillMenu = ref(false);
 const taRef = ref<any>(null);
+const panelRef = ref<HTMLDivElement | null>(null);
 
 const insertMarkdown = (snippet: string, offset = 0) => {
   const ta = taRef.value?.resizableTextArea?.textArea as HTMLTextAreaElement | undefined;
@@ -109,6 +133,27 @@ const onKeyDown = (e: KeyboardEvent) => {
   }
 };
 
+const onTextChange = (next: string) => {
+  text.value = next;
+  if (next.endsWith('@') && !next.slice(0, -1).endsWith('@')) {
+    showSkillMenu.value = true;
+  }
+};
+
+const onPickSkill = (s: SkillMeta) => {
+  setActiveSkill(s.id === 'default' ? null : s.id);
+  showSkillMenu.value = false;
+  text.value = text.value.replace(/@$/, '');
+  antdMsg.success(`已切换到 ${s.name}`);
+};
+
+// 点击外部关闭 Skill 弹窗
+const onDocClick = (e: MouseEvent) => {
+  if (panelRef.value && !panelRef.value.contains(e.target as Node)) {
+    showSkillMenu.value = false;
+  }
+};
+
 const fileToDataURL = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -140,17 +185,52 @@ const onClear = () => {
 
 const placeholder = computed(() =>
   isStreaming.value
-    ? 'AI 正在回复中…（继续输入会打断当前回复）'
-    : '请输入消息，回车发送，Shift+回车换行',
+    ? 'AI 正在回复中…（继续输入会打断当前回复；输入 @ 唤起 Skill）'
+    : '请输入消息，回车发送，Shift+回车换行，输入 @ 唤起 Skill',
 );
 
 const hint = computed(() =>
-  isStreaming.value ? 'Enter 发送（打断当前）· Shift+Enter 换行' : 'Enter 发送 · Shift+Enter 换行',
+  isStreaming.value
+    ? 'Enter 发送（打断当前）· Shift+Enter 换行 · @ 唤起 Skill'
+    : 'Enter 发送 · Shift+Enter 换行 · @ 唤起 Skill',
 );
+
+/** 监听"推荐追问" chip 点击事件（ChatWindow 通过 window.dispatchEvent 触发） */
+const onSuggestion = (e: Event) => {
+  const ce = e as CustomEvent<string>;
+  const text = ce.detail;
+  if (!text) return;
+  sendMessage(text, { images: [], files: [] });
+};
+onMounted(() => {
+  window.addEventListener('doubao:send-suggestion', onSuggestion as EventListener);
+  document.addEventListener('mousedown', onDocClick);
+});
+onUnmounted(() => {
+  window.removeEventListener('doubao:send-suggestion', onSuggestion as EventListener);
+  document.removeEventListener('mousedown', onDocClick);
+});
 </script>
 
 <template>
-  <div class="input-panel">
+  <div class="input-panel" ref="panelRef">
+    <!-- 当前激活 Skill 提示条 -->
+    <div v-if="activeSkillId && activeSkillId !== 'default'" class="input-panel__skill-chip">
+      <span class="input-panel__skill-icon">
+        <component :is="SKILL_ICONS[activeSkillId] || ThunderboltOutlined" />
+      </span>
+      <span class="input-panel__skill-name">{{ activeSkill.name }}</span>
+      <span class="input-panel__skill-hint">{{ activeSkill.description }}</span>
+      <Button
+        type="text"
+        size="small"
+        class="input-panel__skill-close"
+        @click="setActiveSkill(null)"
+      >
+        <template #icon><CloseOutlined /></template>
+      </Button>
+    </div>
+
     <div v-if="attachments.length > 0" class="input-panel__attachments">
       <div
         v-for="(a, i) in attachments"
@@ -195,6 +275,16 @@ const hint = computed(() =>
           </Button>
         </Tooltip>
       </Upload>
+      <!-- @ 唤起 Skill -->
+      <Tooltip title="唤起 Skill（输入 @ 也可）">
+        <Button
+          type="text"
+          :class="{ 'is-active': activeSkillId && activeSkillId !== 'default' }"
+          @click="showSkillMenu = !showSkillMenu"
+        >
+          <template #icon><ThunderboltOutlined /></template>
+        </Button>
+      </Tooltip>
       <div style="flex: 1"></div>
       <Tooltip title="清空">
         <Button type="text" @click="onClear">
@@ -203,12 +293,35 @@ const hint = computed(() =>
       </Tooltip>
     </div>
 
+    <!-- @ 唤起的 Skill 弹窗 -->
+    <div v-if="showSkillMenu" class="skill-menu">
+      <div class="skill-menu__head">选择 Skill</div>
+      <div class="skill-menu__list">
+        <button
+          v-for="s in SKILLS"
+          :key="s.id"
+          class="skill-menu__item"
+          :class="{ 'is-active': (activeSkillId || 'default') === s.id }"
+          @click="onPickSkill(s)"
+        >
+          <span class="skill-menu__icon">
+            <component :is="SKILL_ICONS[s.id] || ThunderboltOutlined" />
+          </span>
+          <span class="skill-menu__main">
+            <span class="skill-menu__name">{{ s.name }}</span>
+            <span class="skill-menu__desc">{{ s.description }}</span>
+          </span>
+        </button>
+      </div>
+    </div>
+
     <Input.TextArea
       ref="taRef"
-      v-model:value="text"
+      :value="text"
       :placeholder="placeholder"
       :auto-size="{ minRows: 2, maxRows: 8 }"
       class="input-panel__textarea"
+      @input="(e: any) => onTextChange(e.target.value)"
       @keydown="onKeyDown"
     />
 

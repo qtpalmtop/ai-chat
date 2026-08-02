@@ -282,6 +282,22 @@ export function useChat() {
           case 'comparison':
             onNonTextBoundary({ type: 'comparison', title: payload.title, items: payload.items });
             break;
+          // ===== 对齐豆包进一步扩展 =====
+          case 'image_group':
+            onNonTextBoundary({ type: 'image_group', data: payload.data });
+            break;
+          case 'image_understanding':
+            onNonTextBoundary({ type: 'image_understanding', data: payload.data });
+            break;
+          case 'file_parsed':
+            onNonTextBoundary({ type: 'file_parsed', data: payload.data });
+            break;
+          case 'timeline':
+            onNonTextBoundary({ type: 'timeline', title: payload.title, events: payload.events });
+            break;
+          case 'task_list':
+            onNonTextBoundary({ type: 'task_list', title: payload.title, tasks: payload.tasks });
+            break;
           // 'done' 走单独事件，不在这里处理
         }
       } catch (err) {

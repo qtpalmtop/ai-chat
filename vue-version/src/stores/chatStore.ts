@@ -21,6 +21,8 @@ interface State {
   currentSessionId: string | null;
   /** persist hydration 是否完成（localStorage → store 数据回填） */
   hasHydrated: boolean;
+  /** 当前激活的 Skill id */
+  activeSkillId: string | null;
 }
 
 export const useChatStore = defineStore('chat', {
@@ -30,6 +32,7 @@ export const useChatStore = defineStore('chat', {
     messages: {},
     currentSessionId: null,
     hasHydrated: false,
+    activeSkillId: null,
   }),
 
   getters: {
@@ -54,6 +57,10 @@ export const useChatStore = defineStore('chat', {
   actions: {
     setHasHydrated(v: boolean) {
       this.hasHydrated = v;
+    },
+
+    setActiveSkill(id: string | null) {
+      this.activeSkillId = id;
     },
 
     createSession(title?: string): string {
@@ -134,13 +141,27 @@ export const useChatStore = defineStore('chat', {
     interruptStream(sessionId: string, messageId: string) {
       this.updateMessageInList(sessionId, messageId, (m) => closeStream(m, 'interrupted'));
     },
+
+    /** 设置消息反馈（点赞/点踩） */
+    setMessageFeedback(sessionId: string, messageId: string, feedback: 'like' | 'dislike' | null) {
+      this.updateMessageInList(sessionId, messageId, (m) => ({ ...m, feedback }));
+    },
+
+    /** 截断消息列表：保留到 fromMessageId（含），之后的全部移除 */
+    truncateAfter(sessionId: string, fromMessageId: string) {
+      const list = this.messages[sessionId];
+      if (!list) return;
+      const idx = list.findIndex((m) => m.id === fromMessageId);
+      if (idx === -1) return;
+      this.messages[sessionId] = list.slice(0, idx + 1);
+    },
   },
 
   // 持久化：仅业务数据
   persist: {
     key: 'doubao-chat-storage-vue',
     storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-    pick: ['sessions', 'sessionIds', 'messages', 'currentSessionId'],
+    pick: ['sessions', 'sessionIds', 'messages', 'currentSessionId', 'activeSkillId'],
     afterHydrate: (ctx) => {
       // hydrate 完成后 setHasHydrated(true)，
       // 组件用此等待 hydration 完成后才进行"消息已加载"相关操作

@@ -23,6 +23,12 @@ import {
   CodeOutlined,
   PlayCircleOutlined,
   ExperimentOutlined,
+  EyeOutlined,
+  FileSearchOutlined,
+  ClockCircleOutlined,
+  CheckOutlined,
+  PictureOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 import type {
   MessagePart,
@@ -30,6 +36,10 @@ import type {
   ChartData,
   FunctionCallPart,
   ComparisonItem,
+  ImageUnderstanding,
+  FileParsed,
+  TimelineEvent,
+  TaskItem,
 } from '@/types/message';
 import { MarkdownStream } from '@/components/MarkdownStream/MarkdownStream';
 
@@ -53,9 +63,49 @@ function getFileIcon(name: string) {
 
 // ============== 思维链卡片 ==============
 
+// 把思维链文本拆为「步骤列表 + 散落段」，若匹配到 \nN. 开头则按步骤展示
+function splitThinkingSteps(content: string): { steps: string[]; intro?: string; outro?: string } {
+  const lines = content.split('\n');
+  const stepRe = /^\s*(\d+)\.\s+(.+)$/;
+  const steps: { idx: number; text: string }[] = [];
+  let introLines: string[] = [];
+  let outroLines: string[] = [];
+  let inSteps = false;
+  let afterSteps = false;
+  for (const line of lines) {
+    const m = line.match(stepRe);
+    if (m && !afterSteps) {
+      inSteps = true;
+      steps.push({ idx: parseInt(m[1], 10), text: m[2].trim() });
+    } else if (inSteps && !stepRe.test(line) && line.trim() === '') {
+      // 步骤之间的空行，继续
+      continue;
+    } else if (inSteps && !stepRe.test(line)) {
+      // 退出步骤
+      inSteps = false;
+      afterSteps = true;
+      outroLines.push(line);
+    } else if (!inSteps && !afterSteps) {
+      introLines.push(line);
+    } else {
+      outroLines.push(line);
+    }
+  }
+  // 如果只有 1 步则退化为段落，避免展示一个孤立的列表
+  if (steps.length < 2) {
+    return { steps: [], intro: content };
+  }
+  return {
+    steps: steps.map((s) => s.text),
+    intro: introLines.join('\n').trim() || undefined,
+    outro: outroLines.join('\n').trim() || undefined,
+  };
+}
+
 const ThinkingCard: React.FC<{ content: string; durationMs?: number }> = ({ content, durationMs }) => {
   const [open, setOpen] = useState(false);
   const sec = durationMs ? (durationMs / 1000).toFixed(1) + 's' : '';
+  const { steps, intro, outro } = splitThinkingSteps(content);
   return (
     <div className={`part-thinking ${open ? 'is-open' : ''}`}>
       <button className="part-thinking__head" onClick={() => setOpen((v) => !v)}>
@@ -64,9 +114,25 @@ const ThinkingCard: React.FC<{ content: string; durationMs?: number }> = ({ cont
         </span>
         <span className="part-thinking__label">{open ? '已展开思考过程' : '已思考'}</span>
         {sec && <span className="part-thinking__meta">用时 {sec}</span>}
+        {steps.length > 0 && <span className="part-thinking__count">{steps.length} 步</span>}
         <CaretRightOutlined className="part-thinking__caret" />
       </button>
-      {open && <div className="part-thinking__body">{content}</div>}
+      {open && (
+        <div className="part-thinking__body">
+          {intro && <div className="part-thinking__intro">{intro}</div>}
+          {steps.length > 0 && (
+            <ol className="part-thinking__steps">
+              {steps.map((s, i) => (
+                <li key={i} className="part-thinking__step">
+                  <span className="part-thinking__step-num">{i + 1}</span>
+                  <span className="part-thinking__step-text">{s}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+          {outro && <div className="part-thinking__outro">{outro}</div>}
+        </div>
+      )}
     </div>
   );
 };
@@ -138,17 +204,17 @@ const CodeCard: React.FC<{ language: string; content: string; filename?: string 
 
 // ============== 图表卡片（纯 SVG 实现，零依赖） ==============
 
-const ChartCard: React.FC<{ chartType: 'bar' | 'line' | 'pie'; title?: string; data: ChartData }> = ({
+const ChartCard: React.FC<{ chartType: 'bar' | 'line' | 'pie' | 'radar'; title?: string; data: ChartData }> = ({
   chartType,
   title,
   data,
 }) => {
   const W = 480;
-  const H = 220;
+  const H = 240;
   const PAD_L = 36;
   const PAD_R = 12;
   const PAD_T = 16;
-  const PAD_B = 28;
+  const PAD_B = 36;
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
   const max = Math.max(...data.values, 1);
@@ -259,6 +325,116 @@ const ChartCard: React.FC<{ chartType: 'bar' | 'line' | 'pie'; title?: string; d
             );
           })()}
 
+        {chartType === 'radar' &&
+          (() => {
+            // 雷达图：以 (cx, cy) 为中心，等分角度画 N 个顶点
+            const n = data.labels.length;
+            const cx = PAD_L + innerW / 2;
+            const cy = PAD_T + innerH / 2 + 4;
+            const r = Math.min(innerW, innerH) / 2 - 24;
+            const angle = (i: number) => (i / n) * Math.PI * 2 - Math.PI / 2;
+            // 同心多边形（3 圈）
+            const rings = [0.33, 0.66, 1];
+            return (
+              <>
+                {rings.map((rr, ri) => {
+                  const pts = Array.from({ length: n }, (_, i) => {
+                    const a = angle(i);
+                    return [cx + r * rr * Math.cos(a), cy + r * rr * Math.sin(a)] as const;
+                  });
+                  const d = pts
+                    .map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`)
+                    .join(' ') + ' Z';
+                  return (
+                    <path
+                      key={ri}
+                      d={d}
+                      fill="none"
+                      stroke="#e6e8ee"
+                      strokeDasharray={ri === rings.length - 1 ? '0' : '3 3'}
+                    />
+                  );
+                })}
+                {/* 轴线 */}
+                {data.labels.map((_, i) => {
+                  const a = angle(i);
+                  return (
+                    <line
+                      key={i}
+                      x1={cx}
+                      y1={cy}
+                      x2={cx + r * Math.cos(a)}
+                      y2={cy + r * Math.sin(a)}
+                      stroke="#e6e8ee"
+                    />
+                  );
+                })}
+                {/* 数据多边形 */}
+                {(() => {
+                  const dataPts = data.values.map((v, i) => {
+                    const a = angle(i);
+                    const rr = v / max;
+                    return [cx + r * rr * Math.cos(a), cy + r * rr * Math.sin(a)] as const;
+                  });
+                  const d =
+                    dataPts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ') + ' Z';
+                  return (
+                    <>
+                      <path
+                        d={d}
+                        fill="rgba(77, 107, 254, 0.18)"
+                        stroke="#4d6bfe"
+                        strokeWidth="2"
+                      />
+                      {dataPts.map(([x, y], i) => (
+                        <circle key={i} cx={x} cy={y} r="3" fill="#4d6bfe" />
+                      ))}
+                    </>
+                  );
+                })()}
+                {/* 标签 */}
+                {data.labels.map((label, i) => {
+                  const a = angle(i);
+                  const lx = cx + (r + 14) * Math.cos(a);
+                  const ly = cy + (r + 14) * Math.sin(a);
+                  return (
+                    <text
+                      key={i}
+                      x={lx}
+                      y={ly}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fontSize="11"
+                      fill="#6b7280"
+                    >
+                      {label}
+                    </text>
+                  );
+                })}
+                {/* 数值 */}
+                {data.values.map((v, i) => {
+                  const a = angle(i);
+                  const rr = v / max;
+                  const dx = cx + r * rr * Math.cos(a);
+                  const dy = cy + r * rr * Math.sin(a);
+                  return (
+                    <text
+                      key={i}
+                      x={dx}
+                      y={dy - 8}
+                      textAnchor="middle"
+                      fontSize="10"
+                      fill="#1d2129"
+                    >
+                      {v}
+                      {data.unit || ''}
+                    </text>
+                  );
+                })}
+              </>
+            );
+          })()}
+
         <defs>
           <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#7b5cff" />
@@ -311,7 +487,10 @@ const SuggestionCard: React.FC<{ items: string[]; onPick?: (s: string) => void }
 
 // ============== 工具调用卡片（Function Call） ==============
 
-const FunctionCallCard: React.FC<{ call: FunctionCallPart }> = ({ call }) => {
+const FunctionCallCard: React.FC<{ call: FunctionCallPart; onRetry?: (id: string) => void }> = ({
+  call,
+  onRetry,
+}) => {
   const [open, setOpen] = useState(true);
   const statusIcon = (() => {
     switch (call.status) {
@@ -331,14 +510,18 @@ const FunctionCallCard: React.FC<{ call: FunctionCallPart }> = ({ call }) => {
     done: '已完成',
     error: '执行失败',
   }[call.status];
+  const canRetry = call.status === 'error' && (call.retries ?? 0) < 3;
 
   return (
     <div className={`part-fc part-fc--${call.status}`}>
       <button className="part-fc__head" onClick={() => setOpen((v) => !v)}>
         <span className="part-fc__status">{statusIcon}</span>
-        <span className="part-fc__name">
+        <span className="part-fc__name" title={call.description || call.name}>
           <ExperimentOutlined /> 调用工具 <code>{call.name}</code>
         </span>
+        {call.retries != null && call.retries > 0 && (
+          <span className="part-fc__retries">已重试 {call.retries} 次</span>
+        )}
         <span className="part-fc__state">{statusText}</span>
         <CaretRightOutlined className="part-fc__caret" />
       </button>
@@ -358,8 +541,13 @@ const FunctionCallCard: React.FC<{ call: FunctionCallPart }> = ({ call }) => {
               </pre>
             </div>
           )}
-          {call.errorMessage && (
-            <div className="part-fc__err">{call.errorMessage}</div>
+          {call.errorMessage && <div className="part-fc__err">{call.errorMessage}</div>}
+          {canRetry && (
+            <div className="part-fc__actions">
+              <button className="part-fc__retry" onClick={() => onRetry?.(call.id)}>
+                <ReloadOutlined /> 重试调用
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -391,14 +579,162 @@ const ComparisonCard: React.FC<{ title?: string; items: ComparisonItem[] }> = ({
   );
 };
 
+// ============== 图片理解卡片（豆包"拍照问答"） ==============
+
+const ImageUnderstandingCard: React.FC<{ data: ImageUnderstanding; onPick?: (s: string) => void }> = ({
+  data,
+  onPick,
+}) => {
+  return (
+    <div className="part-img-und">
+      <div className="part-img-und__head">
+        <PictureOutlined /> <span>图片理解</span>
+      </div>
+      <div className="part-img-und__body">
+        <div className="part-img-und__thumb">
+          <AntdImage src={data.imageUrl} alt="uploaded" width={140} style={{ borderRadius: 8 }} />
+        </div>
+        <div className="part-img-und__content">
+          <div className="part-img-und__desc">{data.description}</div>
+          {data.tags && data.tags.length > 0 && (
+            <div className="part-img-und__tags">
+              {data.tags.map((t, i) => (
+                <Tag key={i} color="blue" style={{ marginInlineEnd: 4 }}>
+                  {t}
+                </Tag>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      {data.followUpQuestions && data.followUpQuestions.length > 0 && (
+        <div className="part-img-und__followup">
+          {data.followUpQuestions.map((q, i) => (
+            <button key={i} className="part-suggestion__chip" onClick={() => onPick?.(q)}>
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============== 文件解析卡片（PDF/Word 总结） ==============
+
+const FileParsedCard: React.FC<{ data: FileParsed }> = ({ data }) => {
+  const sec = data.durationMs ? (data.durationMs / 1000).toFixed(1) + 's' : '';
+  return (
+    <div className="part-file-parsed">
+      <div className="part-file-parsed__head">
+        <FileSearchOutlined />
+        <span className="part-file-parsed__title">{data.name}</span>
+        {data.pages && <Tag color="default">{data.pages} 页</Tag>}
+        {sec && <span className="part-file-parsed__meta">解析用时 {sec}</span>}
+      </div>
+      <div className="part-file-parsed__summary">{data.summary}</div>
+      {data.keyPoints.length > 0 && (
+        <div className="part-file-parsed__points">
+          <div className="part-file-parsed__label">关键要点</div>
+          <ul>
+            {data.keyPoints.map((p, i) => (
+              <li key={i}>{p}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============== 时间线卡片 ==============
+
+const TimelineCard: React.FC<{ title?: string; events: TimelineEvent[] }> = ({ title, events }) => {
+  if (!events?.length) return null;
+  return (
+    <div className="part-timeline">
+      {title && <div className="part-timeline__title">{title}</div>}
+      <div className="part-timeline__list">
+        {events.map((e, i) => (
+          <div key={i} className={`part-timeline__item part-timeline__item--${e.status || 'done'}`}>
+            <div className="part-timeline__dot">
+              {e.status === 'current' ? <ClockCircleOutlined /> : <CheckOutlined />}
+            </div>
+            <div className="part-timeline__content">
+              <div className="part-timeline__time">{e.time}</div>
+              <div className="part-timeline__name">{e.title}</div>
+              {e.description && <div className="part-timeline__desc">{e.description}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ============== 任务清单卡片 ==============
+
+const TaskListCard: React.FC<{ title?: string; tasks: TaskItem[] }> = ({ title, tasks }) => {
+  if (!tasks?.length) return null;
+  const doneCount = tasks.filter((t) => t.done).length;
+  const total = tasks.length;
+  const pct = Math.round((doneCount / total) * 100);
+  return (
+    <div className="part-tasks">
+      {title && <div className="part-tasks__title">{title}</div>}
+      <div className="part-tasks__progress">
+        <div className="part-tasks__bar">
+          <div className="part-tasks__bar-fill" style={{ width: pct + '%' }} />
+        </div>
+        <div className="part-tasks__pct">
+          {doneCount} / {total} · {pct}%
+        </div>
+      </div>
+      <ul className="part-tasks__list">
+        {tasks.map((t, i) => (
+          <li
+            key={i}
+            className={`part-tasks__item ${t.done ? 'is-done' : ''}`}
+          >
+            <span className="part-tasks__check">
+              {t.done ? <CheckCircleFilled style={{ color: '#22c55e' }} /> : <span className="part-tasks__empty" />}
+            </span>
+            <span className="part-tasks__label">{t.label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+// ============== 图片组（轮播） ==============
+
+const ImageGroupCard: React.FC<{ images: { url: string; alt?: string; caption?: string }[] }> = ({
+  images,
+}) => {
+  if (!images?.length) return null;
+  return (
+    <div className="part-image-group">
+      {images.map((img, i) => (
+        <div key={i} className="part-image-group__item">
+          <AntdImage src={img.url} alt={img.alt} width={120} style={{ borderRadius: 6 }} />
+          {img.caption && <div className="part-image-group__caption">{img.caption}</div>}
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // ============== 分发器 ==============
 
 export interface PartRendererProps extends Props {
   /** suggestion chip 点击回调：把推荐追问注入到输入区或直接发送 */
   onSuggestionPick?: (s: string) => void;
+  /** 工具调用失败时的重试回调 */
+  onFunctionCallRetry?: (id: string) => void;
 }
 
-export const PartRenderer: React.FC<PartRendererProps> = ({ part, onSuggestionPick }) => {
+export const PartRenderer: React.FC<PartRendererProps> = ({ part, onSuggestionPick, onFunctionCallRetry }) => {
   switch (part.type) {
     case 'text':
       return <div className="part-text">{part.content}</div>;
@@ -437,9 +773,20 @@ export const PartRenderer: React.FC<PartRendererProps> = ({ part, onSuggestionPi
     case 'suggestion':
       return <SuggestionCard items={part.items} onPick={onSuggestionPick} />;
     case 'function_call':
-      return <FunctionCallCard call={part.call} />;
+      return <FunctionCallCard call={part.call} onRetry={onFunctionCallRetry} />;
     case 'comparison':
       return <ComparisonCard title={part.title} items={part.items} />;
+    // ===== 对齐豆包进一步扩展 =====
+    case 'image_group':
+      return <ImageGroupCard images={part.data.images} />;
+    case 'image_understanding':
+      return <ImageUnderstandingCard data={part.data} onPick={onSuggestionPick} />;
+    case 'file_parsed':
+      return <FileParsedCard data={part.data} />;
+    case 'timeline':
+      return <TimelineCard title={part.title} events={part.events} />;
+    case 'task_list':
+      return <TaskListCard title={part.title} tasks={part.tasks} />;
 
     default:
       return null;

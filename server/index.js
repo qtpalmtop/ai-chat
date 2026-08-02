@@ -118,7 +118,7 @@ router.get('/api/health', (ctx) => {
 router.get('/api/chat/sse', async (ctx) => {
   const prompt = ctx.query.prompt || '';
   const skill = ctx.query.skill || '';
-  const answer = pickResponse(prompt);
+  const answer = pickResponse(prompt, skill);
   // 卡片 part + 文本 part 一并流式：splitPartsIntoChunks 区分对待
   const chunks = splitPartsIntoChunks(answer.parts || []);
   const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);

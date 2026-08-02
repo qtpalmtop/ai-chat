@@ -2,6 +2,7 @@
  * useChat - 核心对话逻辑 Composable（对应 React 版的 useChat hook）
  * - sendMessage: 发送消息（支持文本 + 图片 + 文件）
  * - stop: 中断"当前会话"的生成
+ * - regenerate: 重新生成（对标豆包的"重新生成"按钮）
  * - 内部建立 EventSource，把每个 chunk 累积到 store
  * - 通过分段器 flush 已闭合 Markdown 段，避免每 token 重渲染整篇
  *
@@ -135,8 +136,9 @@ export function useChat() {
       pendingText: '',
     });
 
-    // 6) 建立 EventSource
+    // 6) 建立 EventSource（带 skill 参数）
     const params = new URLSearchParams({ prompt: text || '你好' });
+    if (store.activeSkillId) params.set('skill', store.activeSkillId);
     const es = new EventSource(`/api/chat/sse?${params.toString()}`);
     abortMap.set(sessionId, () => es.close());
 
@@ -235,9 +237,57 @@ export function useChat() {
               name: payload.name,
               size: payload.size,
               url: payload.url,
-              mime: undefined,
+              mime: payload.mime,
             });
             break;
+          case 'thinking':
+            onNonTextBoundary({ type: 'thinking', content: payload.content, durationMs: payload.durationMs });
+            break;
+          case 'citation':
+            onNonTextBoundary({ type: 'citation', sources: payload.sources });
+            break;
+          case 'code':
+            onNonTextBoundary({
+              type: 'code',
+              language: payload.language,
+              content: payload.content,
+              filename: payload.filename,
+            });
+            break;
+          case 'chart':
+            onNonTextBoundary({
+              type: 'chart',
+              chartType: payload.chartType,
+              title: payload.title,
+              data: payload.data,
+            });
+            break;
+          case 'suggestion':
+            onNonTextBoundary({ type: 'suggestion', items: payload.items });
+            break;
+          case 'function_call':
+            onNonTextBoundary({ type: 'function_call', call: payload.call });
+            break;
+          case 'comparison':
+            onNonTextBoundary({ type: 'comparison', title: payload.title, items: payload.items });
+            break;
+          // ===== 对齐豆包进一步扩展 =====
+          case 'image_group':
+            onNonTextBoundary({ type: 'image_group', data: payload.data });
+            break;
+          case 'image_understanding':
+            onNonTextBoundary({ type: 'image_understanding', data: payload.data });
+            break;
+          case 'file_parsed':
+            onNonTextBoundary({ type: 'file_parsed', data: payload.data });
+            break;
+          case 'timeline':
+            onNonTextBoundary({ type: 'timeline', title: payload.title, events: payload.events });
+            break;
+          case 'task_list':
+            onNonTextBoundary({ type: 'task_list', title: payload.title, tasks: payload.tasks });
+            break;
+          // 'done' 走单独事件，不在这里处理
         }
       } catch (err) {
         console.warn('[SSE] parse', err);
@@ -266,5 +316,38 @@ export function useChat() {
     });
   };
 
-  return { sendMessage, stop };
+  /**
+   * 重新生成：找到 AI 消息前一条 user 消息 → 截断到该 user 之后 → 重新触发 send
+   */
+  const regenerate = (aiMessage: Message) => {
+    const sessionId = aiMessage.sessionId;
+    const list = store.messages[sessionId];
+    if (!list) return;
+    const idx = list.findIndex((m) => m.id === aiMessage.id);
+    if (idx <= 0) return;
+    const userMsg = list[idx - 1];
+    if (userMsg.role !== 'user') return;
+
+    // 截断：保留到 userMsg（含），之后全部移除
+    store.truncateAfter(sessionId, userMsg.id);
+
+    // 取 user 消息的文本 + 附件
+    const text = userMsg.parts
+      .filter((p) => p.type === 'text')
+      .map((p) => (p as Extract<MessagePart, { type: 'text' }>).content)
+      .join('');
+    const images = userMsg.parts
+      .filter((p) => p.type === 'image')
+      .map((p) => ({ url: (p as Extract<MessagePart, { type: 'image' }>).url, alt: (p as Extract<MessagePart, { type: 'image' }>).alt }));
+    const files = userMsg.parts
+      .filter((p) => p.type === 'file')
+      .map((p) => {
+        const f = p as Extract<MessagePart, { type: 'file' }>;
+        return { name: f.name, size: f.size, url: f.url, mime: f.mime };
+      });
+
+    sendMessage(text, { images, files });
+  };
+
+  return { sendMessage, stop, regenerate };
 }

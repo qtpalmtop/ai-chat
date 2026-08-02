@@ -11,7 +11,7 @@
  *       messages 内部未变（其他会话或 pendingText）时不会重渲染
  */
 
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import {
   Button,
   Input,
@@ -19,6 +19,7 @@ import {
   Upload,
   message as antdMsg,
   Space,
+  Tag,
 } from 'antd';
 import {
   SendOutlined,
@@ -29,9 +30,18 @@ import {
   CodeOutlined,
   UnorderedListOutlined,
   ClearOutlined,
+  ThunderboltOutlined,
+  GlobalOutlined,
+  TranslationOutlined,
+  EditOutlined,
+  CodeSandboxOutlined,
+  BarChartOutlined,
+  CloseOutlined,
 } from '@ant-design/icons';
 import { useChat } from '@/hooks/useChat';
 import { useChatStore } from '@/store/chatStore';
+import { SKILLS } from '@/components/SkillBar/skills';
+import type { SkillMeta } from '@/types/message';
 
 interface Attachment {
   kind: 'image' | 'file';
@@ -40,6 +50,16 @@ interface Attachment {
   size: number;
   mime?: string;
 }
+
+const SKILL_ICONS: Record<string, React.ReactNode> = {
+  default: <ThunderboltOutlined />,
+  thinking: <ThunderboltOutlined />,
+  web: <GlobalOutlined />,
+  translate: <TranslationOutlined />,
+  writer: <EditOutlined />,
+  coder: <CodeSandboxOutlined />,
+  analyst: <BarChartOutlined />,
+};
 
 const WELCOME = '你好，我是豆包 👋 试试问我：写一个 React Hook 例子 / 用图表展示销售占比 / 深度思考 2024 营收趋势';
 const SUGGESTIONS = [
@@ -63,10 +83,19 @@ export const InputPanel: React.FC = () => {
     return msgs ? msgs.some((m) => m.status === 'streaming') : false;
   });
 
+  // 当前激活的 Skill（同步顶部 SkillBar）
+  const activeSkillId = useChatStore((s) => s.activeSkillId) || 'default';
+  const setActiveSkill = useChatStore((s) => s.setActiveSkill);
+  const activeSkill: SkillMeta =
+    SKILLS.find((s) => s.id === activeSkillId) || SKILLS[0];
+
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  // @ 唤起 Skill 弹窗
+  const [showSkillMenu, setShowSkillMenu] = useState(false);
   // 自动高度
   const taRef = useRef<any>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const insertMarkdown = useCallback(
     (snippet: string, offset = 0) => {
@@ -124,6 +153,38 @@ export const InputPanel: React.FC = () => {
     [onSend],
   );
 
+  // @ 唤起 Skill 弹窗：监听输入框内 "@" 字符 → 弹面板
+  const onTextChange = useCallback((next: string) => {
+    setText(next);
+    // 简化版：输入框为空时不弹；输入 "@" 时弹
+    if (next.endsWith('@') && !next.slice(0, -1).endsWith('@')) {
+      setShowSkillMenu(true);
+    }
+  }, []);
+
+  const onPickSkill = useCallback(
+    (s: SkillMeta) => {
+      setActiveSkill(s.id === 'default' ? null : s.id);
+      setShowSkillMenu(false);
+      // 移除输入框末尾的 "@"
+      setText((t) => t.replace(/@$/, ''));
+      antdMsg.success(`已切换到 ${s.name}`);
+    },
+    [setActiveSkill],
+  );
+
+  // 点击外部关闭弹窗
+  useEffect(() => {
+    if (!showSkillMenu) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setShowSkillMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [showSkillMenu]);
+
   const fileToDataURL = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -167,7 +228,25 @@ export const InputPanel: React.FC = () => {
   }, [sendMessage]);
 
   return (
-    <div className="input-panel">
+    <div className="input-panel" ref={panelRef}>
+      {/* 当前激活 Skill 提示条（不是 default 时显示） */}
+      {activeSkillId !== 'default' && (
+        <div className="input-panel__skill-chip">
+          <span className="input-panel__skill-icon">
+            {SKILL_ICONS[activeSkillId] || <ThunderboltOutlined />}
+          </span>
+          <span className="input-panel__skill-name">{activeSkill.name}</span>
+          <span className="input-panel__skill-hint">{activeSkill.description}</span>
+          <Button
+            type="text"
+            size="small"
+            icon={<CloseOutlined />}
+            onClick={() => setActiveSkill(null)}
+            className="input-panel__skill-close"
+          />
+        </div>
+      )}
+
       {attachments.length > 0 && (
         <div className="input-panel__attachments">
           {attachments.map((a, i) => (
@@ -213,21 +292,54 @@ export const InputPanel: React.FC = () => {
             <Button type="text" icon={<FileAddOutlined />} />
           </Tooltip>
         </Upload>
+        {/* @ 唤起 Skill */}
+        <Tooltip title="唤起 Skill（输入 @ 也可）">
+          <Button
+            type="text"
+            icon={<ThunderboltOutlined />}
+            onClick={() => setShowSkillMenu((v) => !v)}
+            className={activeSkillId !== 'default' ? 'is-active' : ''}
+          />
+        </Tooltip>
         <div style={{ flex: 1 }} />
         <Tooltip title="清空">
           <Button type="text" icon={<ClearOutlined />} onClick={onClear} />
         </Tooltip>
       </div>
 
+      {/* @ 唤起的 Skill 弹窗（浮在工具栏下方） */}
+      {showSkillMenu && (
+        <div className="skill-menu">
+          <div className="skill-menu__head">选择 Skill</div>
+          <div className="skill-menu__list">
+            {SKILLS.map((s) => (
+              <button
+                key={s.id}
+                className={`skill-menu__item ${activeSkillId === s.id ? 'is-active' : ''}`}
+                onClick={() => onPickSkill(s)}
+              >
+                <span className="skill-menu__icon">
+                  {SKILL_ICONS[s.id] || <ThunderboltOutlined />}
+                </span>
+                <span className="skill-menu__main">
+                  <span className="skill-menu__name">{s.name}</span>
+                  <span className="skill-menu__desc">{s.description}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <Input.TextArea
         ref={taRef}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => onTextChange(e.target.value)}
         onKeyDown={onKeyDown}
         placeholder={
           isStreaming
-            ? 'AI 正在回复中…（继续输入会打断当前回复）'
-            : '请输入消息，回车发送，Shift+回车换行'
+            ? 'AI 正在回复中…（继续输入会打断当前回复；输入 @ 唤起 Skill）'
+            : '请输入消息，回车发送，Shift+回车换行，输入 @ 唤起 Skill'
         }
         autoSize={{ minRows: 2, maxRows: 8 }}
         className="input-panel__textarea"
@@ -235,7 +347,7 @@ export const InputPanel: React.FC = () => {
 
       <div className="input-panel__bottom">
         <div className="input-panel__hint">
-          {isStreaming ? 'Enter 发送（打断当前）· Shift+Enter 换行' : 'Enter 发送 · Shift+Enter 换行'}
+          {isStreaming ? 'Enter 发送（打断当前）· Shift+Enter 换行 · @ 唤起 Skill' : 'Enter 发送 · Shift+Enter 换行 · @ 唤起 Skill'}
         </div>
         <Space size={4}>
           {/* 显式停止按钮：仅 streaming 时出现，给用户主动停止而不发新消息的选项 */}

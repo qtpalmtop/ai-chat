@@ -4,9 +4,13 @@
  * 核心设计：
  *   1. 拆分流式中 / 已完成消息
  *   2. 已完成消息进入虚拟列表（高度稳定、可累加 offset）
- *   3. 流式中消息根据滚动状态切换：
- *      - 用户在底部 → position: sticky 贴底（持续可见）
- *      - 用户向上滚动看历史 → position: static 进入文档流（避免和历史消息重叠）
+ *   3. 流式中消息根据状态切换：
+ *      a) 用户上滑看历史 → position: static（避免和历史消息重叠）
+ *      b) 用户在底部 + 内容较短 → position: sticky 贴底（持续可见）
+ *      c) 用户在底部 + 内容过高（≥ 视口 - 100px）→ position: static
+ *         原因：CSS 规范规定 sticky 元素高度 ≥ containing block（视口）高度时 sticky 失效，
+ *           元素会被压到顶部，看不到新生成的底部内容。
+ *         修复：主动切 static + 自动滚到底，保证用户能看到最新内容。
  *   4. 这样 SSE 打字机增长 pendingText 时，不会让虚拟列表 offset 重算
  *   5. 也不会在用户向上滑动时盖住历史消息
  *
@@ -21,6 +25,13 @@
  *   - 正确做法：用户上滑时把 streaming 从 sticky 切到 static（文档流），
  *     并把它的当前高度纳入 totalHeight，让用户能滚过它看完整历史
  *
+ * 为什么 streaming 过高时也要切 static：
+ *   - CSS spec：sticky 元素高度 ≥ containing block 高度时 sticky 失效
+ *   - 失效后元素被定位在 containing block 顶部（"If the box is taller than
+ *     the containing block, the box is positioned at the top"）
+ *   - 用户看到的会变成"陈旧顶部"而非"刚生成的新内容"——非常糟糕的体验
+ *   - 必须主动切到 static 模式 + 触发自动滚到底
+ *
  * 高度测量：
  *   - 已完成：进入列表时 ResizeObserver 测量一次，缓存
  *   - 流式中：独立 ref 测量；static 模式下纳入 totalHeight，sticky 模式下不纳入
@@ -30,7 +41,7 @@ import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import useIsomorphicLayoutEffect from '@/hooks/useIsomorphicLayoutEffect';
 
 interface Props<T> {
-  items: T[];
+  items: readonly T[];
   /** 当前正在流式生成的项目（如果有），会被移到虚拟列表外 */
   streamingItem?: T | null;
   /** 判断 item 的唯一 key */
@@ -61,6 +72,14 @@ const DEFAULT_ESTIMATED_HEIGHT = 120; // 单条 message 估算高度（避免滚
 const STREAMING_GAP = 8;
 /** 距底部 50px 内视为"在底部"——容忍弹性滚动 / 程序化滚动 */
 const AT_BOTTOM_THRESHOLD = 50;
+/**
+ * streaming 元素"过高"阈值：距视口高度不足此值时，认为元素过高
+ * 原因：CSS 规范规定，sticky 元素高度 ≥ containing block（视口）高度时 sticky 失效，
+ *   元素会被压到 containing block 顶部，导致用户看不到"刚生成的新内容"（最新内容在底部）。
+ *   此时必须主动切到 static 模式 + 自动滚到底，让用户能看到最新内容。
+ *   100px 留白：避免"刚好 800px"临界值频繁切换模式。
+ */
+const STREAMING_OVERFLOW_THRESHOLD = 100;
 
 export function MessageVirtualList<T>({
   items,
@@ -99,6 +118,20 @@ export function MessageVirtualList<T>({
   const userScrolledUpRef = useRef(false);
 
   /**
+   * 是否使用 static 模式（不进 sticky）
+   * - 用户上滑（isAtBottom = false）→ 必须 static，避免覆盖用户在看的历史消息
+   * - streaming 元素过高（高度 ≥ 视口 - 阈值）→ sticky CSS 失效，必须 static
+   *   否则用户看到的是 streaming 元素的"陈旧顶部"，看不到"刚生成的新内容"
+   * 用 ref + state 双重：ref 用于事件回调立即判断，state 用于驱动渲染
+   */
+  const useStaticRef = useRef(false);
+  // streamingTooTall 在 render 中实时计算（基于最新 streamingHeightState）
+  const streamingTooTall = streamingHeightState > height - STREAMING_OVERFLOW_THRESHOLD;
+  // 当 streaming 元素不存在 / 高度还没测出来时，useStatic 跟随 isAtBottom
+  const useStatic = !isAtBottom || streamingTooTall;
+  useStaticRef.current = useStatic;
+
+  /**
    * 计算总高度（统一函数，避免在多处重复实现）
    * - 累加已测量的项
    * - 未测量的项用 DEFAULT_ESTIMATED_HEIGHT 估算
@@ -122,8 +155,9 @@ export function MessageVirtualList<T>({
     (key: string, h: number) => {
       if (heightsRef.current.get(key) === h) return;
       heightsRef.current.set(key, h);
-      // 静态模式才把 streaming 高度计入；sticky 模式 streaming 不在文档流内
-      setTotalHeight(computeTotalHeight(!isAtBottomRef.current));
+      // static 模式才把 streaming 高度计入；sticky 模式 streaming 不在文档流内
+      // 重要：读 useStaticRef.current 而不是 useStatic（避免 measureItem 闭包陈旧）
+      setTotalHeight(computeTotalHeight(useStaticRef.current));
     },
     [computeTotalHeight],
   );
@@ -136,10 +170,9 @@ export function MessageVirtualList<T>({
       if (streamingHeightRef.current === h) return;
       streamingHeightRef.current = h;
       setStreamingHeightState(h);
-      if (!isAtBottomRef.current) {
-        // static 模式：把 streaming 高度计入 totalHeight
-        setTotalHeight(computeTotalHeight(true));
-      }
+      // 无论现在是不是 static 模式：只要 h 变化，totalHeight 都按 useStaticRef 重算
+      // （因为新 h 可能让"streamingTooTall"判断翻车，模式跟着翻车）
+      setTotalHeight(computeTotalHeight(useStaticRef.current));
     },
     [computeTotalHeight],
   );
@@ -213,8 +246,10 @@ export function MessageVirtualList<T>({
       // 切模式时同步 totalHeight：
       //   sticky 模式：streaming 不在文档流，不计入
       //   static  模式：streaming 进入文档流，必须计入，否则滚动条长度不对
+      // 注意：是否纳入 streaming 高度看 useStaticRef（综合 isAtBottom + streamingTooTall）
+      //       而不是只看 !nowAtBottom——用户也可能因"过高"被切到 static
       if (streamingHeightRef.current > 0) {
-        setTotalHeight(computeTotalHeight(!nowAtBottom));
+        setTotalHeight(computeTotalHeight(useStaticRef.current));
       }
     },
     [computeTotalHeight],
@@ -243,6 +278,8 @@ export function MessageVirtualList<T>({
   //   - 之前 useEffect 没写 deps → 每次 render 都跑 → 用户滚一下就被弹回 → 抖动
   //   - 现在 deps 明确 = pendingText/parts 变化才跑
   // 加上 userScrolledUpRef 兜底：用户主动上滑后即便 deps 变化也不跟随
+  // 加上 streamingHeightState 兜底：sticky → static 切换瞬间（元素变高导致 sticky 失效），
+  //   主动滚到底，避免 paint 闪烁（否则用户先看到 streaming 顶部，再被弹到底部）
   useEffect(() => {
     if (!followStreaming || !streamingItem) return;
     if (!isAtBottomRef.current) return; // 不在底部 → 不跟随
@@ -259,6 +296,7 @@ export function MessageVirtualList<T>({
     (streamingItem as StreamingLike | null)?.id,
     (streamingItem as StreamingLike | null)?.pendingText,
     (streamingItem as StreamingLike | null)?.parts?.length,
+    streamingHeightState,
   ]);
 
   return (
@@ -289,24 +327,27 @@ export function MessageVirtualList<T>({
       <div style={{ height: paddingBottom }} />
 
       {/* 流式中 item
-          - atBottom = true  → sticky bottom 0：用户停留底部时始终可见
-          - atBottom = false → static：进入文档流，避免盖住用户正在看的历史消息
-          - 切换时通过 measureStreaming 同步 totalHeight，保证滚动条长度正确 */}
+          - useStatic = true  → static：进入文档流，避免和历史消息重叠 / 避免 sticky 失效被压顶
+          - useStatic = false → sticky bottom 0：用户停留底部时始终可见
+          - 切换时通过 measureStreaming 同步 totalHeight，保证滚动条长度正确
+          - 切到 static 后，自动跟随 effect 仍会滚到底，让用户能看到"刚生成的新内容" */}
       {streamingItem && (
         <div
           style={
-            isAtBottom
+            useStatic
               ? {
-                  // sticky 模式：固定在视口底部
-                  position: 'sticky',
-                  bottom: 0,
-                  background: 'inherit',
+                  // static 模式：进入文档流，自然占据 totalHeight 一部分
+                  // 用户能滚过它，把所有历史消息都看完
+                  // 也用于"streaming 元素过高"的场景：sticky CSS 会失效被压到顶部，
+                  //   此时用 static + 滚到底，保证用户看到最新内容
+                  position: 'static',
                   marginTop: STREAMING_GAP,
                 }
               : {
-                  // static 模式：进入文档流，自然占据 totalHeight 一部分
-                  // 用户能滚过它，把所有历史消息都看完
-                  position: 'static',
+                  // sticky 模式：固定在视口底部（仅在 streaming 元素较小时有效）
+                  position: 'sticky',
+                  bottom: 0,
+                  background: 'inherit',
                   marginTop: STREAMING_GAP,
                 }
           }

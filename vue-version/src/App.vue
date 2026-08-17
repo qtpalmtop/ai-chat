@@ -13,10 +13,15 @@
  *      让所有 antd-vue 内容完全在 client 端渲染，
  *      避免 store / antd 内部状态在 SSR/client 不一致导致的 hydration mismatch。
  *
+ * 路由：
+ *   - /         → 客户端 ChatWindow
+ *   - /agent    → 客服工作台 AgentWorkbench
+ *
  * 注意：本文件注释里**不要**再写任何疑似 V8 错误消息的子串（见 main.ts 注释说明），
  * 否则 Vite 5 dev 模式的错误监控会把这些字面字符串误当成运行时错误上报到浏览器控制台。
  */
 
+import { ref, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
 import { ConfigProvider, App as AntdApp } from 'ant-design-vue';
 import ChatWindow from '@/components/ChatWindow/ChatWindow.vue';
 import ClientOnly from '@/components/ClientOnly/ClientOnly.vue';
@@ -28,6 +33,24 @@ const themeConfig = {
     borderRadius: 8,
   },
 };
+
+// 极简路由：直接读 pathname
+const path = ref(typeof window !== 'undefined' ? window.location.pathname : '/');
+
+const AgentWorkbench = defineAsyncComponent(
+  () => import('@/pages/AgentWorkbench/AgentWorkbench.vue'),
+);
+
+function onPopState() {
+  path.value = window.location.pathname;
+}
+
+onMounted(() => {
+  window.addEventListener('popstate', onPopState);
+});
+onUnmounted(() => {
+  window.removeEventListener('popstate', onPopState);
+});
 </script>
 
 <template>
@@ -35,7 +58,8 @@ const themeConfig = {
     <ClientOnly>
       <ConfigProvider :theme="themeConfig">
         <AntdApp>
-          <ChatWindow />
+          <AgentWorkbench v-if="path === '/agent'" />
+          <ChatWindow v-else />
         </AntdApp>
       </ConfigProvider>
       <template #placeholder>

@@ -14,6 +14,7 @@ import { Avatar, Tooltip, Button, message as antdMsg } from 'ant-design-vue';
 import {
   UserOutlined,
   RobotOutlined,
+  CustomerServiceOutlined,
   CopyOutlined,
   CloseCircleOutlined,
   LikeOutlined,
@@ -39,14 +40,19 @@ const props = defineProps<Props>();
 const store = useChatStore();
 
 const isUser = computed(() => props.message.role === 'user');
-const isAiDone = computed(() => !isUser.value && props.message.status === 'done');
+const isAgent = computed(() => props.message.role === 'agent');
+const isAiDone = computed(
+  () => !isUser.value && !isAgent.value && props.message.status === 'done',
+);
 
 // AI 消息：合并所有 markdown part 作为已渲染内容
+// 客服（agent）消息的 parts 主要是 text，合并到 aiMarkdown 用 MarkdownStream 渲染
 const aiMarkdown = computed(() => {
   if (isUser.value) return '';
   let md = '';
+  const includeText = isAgent.value;
   for (const p of props.message.parts) {
-    if (p.type === 'markdown') {
+    if (p.type === 'markdown' || (includeText && p.type === 'text')) {
       md += (md ? '\n\n' : '') + p.content;
     }
   }
@@ -54,7 +60,11 @@ const aiMarkdown = computed(() => {
 });
 
 const otherParts = computed(() => {
-  return props.message.parts.filter((p) => p.type !== 'markdown' && p.type !== 'text');
+  const includeText = isAgent.value;
+  return props.message.parts.filter((p) => {
+    if (includeText && p.type === 'text') return false;
+    return p.type !== 'markdown' && p.type !== 'text';
+  });
 });
 
 const userText = computed(() => {
@@ -102,9 +112,13 @@ const onShareClick = () => {
     <span class="msg__system-text">{{ systemText }}</span>
   </div>
 
-  <div v-else class="msg" :class="isUser ? 'msg--user' : 'msg--ai'">
-    <Avatar v-if="!isUser" class="msg__avatar msg__avatar--ai">
-      <template #icon><RobotOutlined /></template>
+  <div
+    v-else
+    class="msg"
+    :class="isUser ? 'msg--user' : isAgent ? 'msg--agent' : 'msg--ai'"
+  >
+    <Avatar v-if="!isUser" class="msg__avatar" :class="isAgent ? 'msg__avatar--agent' : 'msg__avatar--ai'">
+      <template #icon><CustomerServiceOutlined v-if="isAgent" /><RobotOutlined v-else /></template>
     </Avatar>
 
     <div class="msg__bubble">

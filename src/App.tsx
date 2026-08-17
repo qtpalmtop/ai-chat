@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { ConfigProvider, App as AntdApp, theme } from 'antd';
 import type { Locale } from 'antd/es/locale';
 import { ChatWindow } from '@/components/ChatWindow/ChatWindow';
+import { AgentWorkbench } from '@/pages/AgentWorkbench/AgentWorkbench';
+import { useRouter } from '@/router';
 
 /**
  * locale 在 SSR 阶段不加载
@@ -12,6 +14,22 @@ import { ChatWindow } from '@/components/ChatWindow/ChatWindow';
  */
 const App: React.FC = () => {
   const [locale, setLocale] = useState<Locale | undefined>(undefined);
+  const { path } = useRouter();
+
+  if (typeof window !== 'undefined') {
+    (window as any).__diag_path = path;
+  }
+
+  React.useEffect(() => {
+    console.log('[diag] App MOUNT');
+    return () => console.log('[diag] App UNMOUNT');
+  }, []);
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      console.log('[diag] path effect:', path);
+    }
+  }, [path]);
 
   useEffect(() => {
     // 只在客户端动态加载 locale（避开 SSR 阶段 CJS 加载问题）
@@ -44,7 +62,7 @@ const App: React.FC = () => {
       }}
     >
       <AntdApp>
-        <ChatWindow />
+        {path === '/agent' ? <AgentWorkbench /> : <ChatWindow />}
       </AntdApp>
     </ConfigProvider>
   );

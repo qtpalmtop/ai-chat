@@ -5,7 +5,7 @@
  *   以及对齐豆包的高阶卡片：思维链 / 引用来源 / 代码块 / 图表 / 追问 / 工具调用 / 对比卡
  */
 
-export type MessageRole = 'user' | 'assistant' | 'system';
+export type MessageRole = 'user' | 'assistant' | 'agent' | 'system';
 
 export type MessageStatus =
   | 'pending' // 排队中

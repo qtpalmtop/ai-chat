@@ -164,7 +164,7 @@ app.use(router.routes()).use(router.allowedMethods());
 app.use(async (ctx, next) => {
   if (ctx.method !== 'GET') return next();
   if (ctx.path.startsWith('/api/')) return next();
-  if (ctx.path !== '/' && !ctx.path.endsWith('.html')) return next();
+  if (ctx.path !== '/' && ctx.path !== '/agent' && !ctx.path.endsWith('.html')) return next();
 
   try {
     const url = ctx.path;

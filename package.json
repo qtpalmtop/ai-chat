@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "node server/index.js",
+    "dev": "concurrently -k -n http,ws -c blue,green \"node server/index.js\" \"node server/agent-ws.js\"",
+    "dev:http": "node server/index.js",
+    "dev:ws": "node server/agent-ws.js",
     "server": "node server/index.js",
     "build:client": "vite build --outDir dist/client",
     "build:server": "vite build --ssr src/entry-server.tsx --outDir dist/server",
@@ -27,6 +29,7 @@
     "rehype-highlight": "^7.0.0",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.0",
+    "ws": "^8.21.3",
     "zustand": "^4.5.5"
   },
   "devDependencies": {

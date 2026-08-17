@@ -14,9 +14,10 @@
 
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Button, App, Dropdown } from 'antd';
-import { DeleteOutlined, MoreOutlined, CodeOutlined, CopyOutlined } from '@ant-design/icons';
+import { DeleteOutlined, MoreOutlined, CodeOutlined, CopyOutlined, CustomerServiceOutlined } from '@ant-design/icons';
 import { useChatStore, useCurrentSession, useCurrentMessages } from '@/store/chatStore';
 import { useChat } from '@/hooks/useChat';
+import { useAgentStore } from '@/store/agentStore';
 import useIsomorphicLayoutEffect from '@/hooks/useIsomorphicLayoutEffect';
 import { MessageItem } from '@/components/MessageItem/MessageItem';
 import { InputPanel, WelcomePanel } from '@/components/InputPanel/InputPanel';
@@ -26,13 +27,35 @@ import { SkillBar } from '@/components/SkillBar/SkillBar';
 import type { Message } from '@/types/message';
 
 export const ChatWindow: React.FC = () => {
+  if (typeof window !== 'undefined') {
+    console.log('[diag] ChatWindow render start');
+  }
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      console.log('[diag] ChatWindow MOUNT');
+      return () => console.log('[diag] ChatWindow UNMOUNT');
+    }
+  }, []);
   const session = useCurrentSession();
-  const messages = useCurrentMessages();
+  const aiMessages = useCurrentMessages();
   const clearAll = useChatStore((s) => s.clearAll);
   // 等 store 从 localStorage 完成 hydration（关键：刷新页面时 messages 才会是完整数据）
   const hasHydrated = useChatStore((s) => s.hasHydrated);
   const { message } = App.useApp();
   const listRef = useRef<HTMLDivElement>(null);
+
+  // ===== 客服会话状态 =====
+  const clientSession = useAgentStore((s) => s.clientSession);
+
+  /**
+   * 消息数据源统一：
+   *   - 客服会话中（inSession）→ 用 clientSession.messages（来自 WS）
+   *   - 其他状态 → 用 chatStore 的 aiMessages（来自 SSE / localStorage）
+   *
+   * 这样切换不丢消息，且客服消息（含 role='agent'）能复用 MessageItem 渲染
+   */
+  const isAgentMode = clientSession.status === 'inSession';
+  const messages: readonly Message[] = isAgentMode ? clientSession.messages : aiMessages;
 
   // 标记用户是否"贴近底部"——只有贴近底部时才允许 SSE 自动跟随
   // 用 ref 而不是 state：避免每次滚动都触发组件重渲染
@@ -248,7 +271,21 @@ export const ChatWindow: React.FC = () => {
       <Sidebar />
       <main className="main">
         <header className="main__header">
-          <div className="main__title">{session?.title || '豆包 AI'}</div>
+          <div className="main__title">
+            {isAgentMode ? (
+              <>
+                <CustomerServiceOutlined style={{ marginRight: 8, color: '#00b894' }} />
+                客服对话中
+                <span className="main__title-sub">
+                  {clientSession.agent?.agentName || ''}
+                </span>
+              </>
+            ) : clientSession.status === 'queued' ? (
+              <>正在为您接入客服…</>
+            ) : (
+              session?.title || '豆包 AI'
+            )}
+          </div>
           <div className="main__actions">
             <Dropdown menu={{ items: dropdownItems }}>
               <Button type="text" icon={<MoreOutlined />} />
@@ -259,7 +296,8 @@ export const ChatWindow: React.FC = () => {
         <SkillBar />
 
         <div className="main__body" ref={listRef} onScroll={onScroll}>
-          {(!session || (messages.length === 0 && !streamingMessage)) ? (
+          {(!session && !isAgentMode) ||
+          (aiMessages.length === 0 && !streamingMessage && !isAgentMode) ? (
             <div className="main__inner">
               <WelcomePanel />
             </div>
@@ -279,11 +317,19 @@ export const ChatWindow: React.FC = () => {
         </div>
 
         <div className="main__footer">
-          {/* key=sessionId 让 InputPanel 在切换会话时整体重建，
-              自动清空 text / attachments 等组件级 state，避免跨会话污染 */}
-          <InputPanel key={session?.id || 'no-session'} />
+          {/* 不再加 key={session.id}：那会让 InputPanel 在 hydration 期间重建，
+              顺带把 useAgentSocket 已连上的 WS 立刻关掉，转人工按钮变 disabled。
+              切换会话时清空 text/attachments 由 InputPanel 内部 useEffect 监听
+              currentSessionId 变化完成。 */}
+          <InputPanel />
         </div>
       </main>
     </div>
   );
 };
+
+// 诊断：ChatWindow unmount 跟踪
+if (typeof window !== 'undefined') {
+  const _origRender = ChatWindow;
+  // 不好用 hook 跟踪 unmount；用 console.log 替代
+}

@@ -4,7 +4,7 @@
  * - 新增：图片理解 / 文件解析 / 时间线 / 任务清单
  */
 
-export type MessageRole = 'user' | 'assistant' | 'system';
+export type MessageRole = 'user' | 'assistant' | 'agent' | 'system';
 
 export type MessageStatus = 'pending' | 'streaming' | 'done' | 'interrupted' | 'error';
 

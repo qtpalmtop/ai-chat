@@ -52,13 +52,39 @@ let vite = null;
 let template = null;
 let ssrRender = null;
 
+// 诊断：拦截 /@vite/client 请求，强制返回空脚本
+// 原因：trae-preview 注入 /@vite/client 后，Vite client 会建立 HMR WebSocket
+//   即使 hmr: false，client 内部仍可能在 connected 后触发 full reload
+//   （具体机制：@vite/client 内部 ping 24678 端口失败 → 触发回退逻辑 → reload）
+//   在 dev middleware 模式下我们不需要 HMR（已禁 WebSocket），直接屏蔽 client
+function noopViteClient() {
+  return `/* @vite/client disabled in dev middleware mode (no HMR needed) */`;
+}
 if (!isProd) {
   // dev: Vite middleware 模式（内存编译、HMR 注入）
   // hmr: false：dev 时显式关掉 HMR WebSocket，避免与 Vue 版 Vite 共享 24678 端口冲突
   //      代价：dev 时无 HMR，需手动刷新页面（不影响功能演示）
+  // watch.ignored：忽略 server/ 目录的修改，避免改 agent-ws.js / index.js 等后端文件时
+  //   Vite 误判为"前端文件变化"而触发 HMR full reload（用户体验：页面无限刷新）
+  //   chokidar 的 glob 需要绝对路径或明确的相对模式才稳定，用 '**/server/**' 在某些版本不生效
+  //   改用绝对路径 + 多重模式（覆盖 server 文件、node_modules、dist 产物）
   vite = await createViteServer({
     root: ROOT,
-    server: { middlewareMode: true, hmr: false },
+    server: {
+      middlewareMode: true,
+      hmr: false,
+      watch: {
+        ignored: [
+          path.resolve(ROOT, 'server'),
+          path.resolve(ROOT, 'node_modules'),
+          path.resolve(ROOT, 'dist'),
+          '**/server/**',
+          '**/server/*',
+          '**/node_modules/**',
+          '**/dist/**',
+        ],
+      },
+    },
     appType: 'custom',
   });
 } else {
@@ -204,8 +230,11 @@ app.use(router.routes()).use(router.allowedMethods());
 app.use(async (ctx, next) => {
   if (ctx.method !== 'GET') return next();
   if (ctx.path.startsWith('/api/')) return next();
-  // 只处理 HTML 入口路径（/ 和明确的 .html），其他静态资源走 Vite/prod 静态服务
-  if (ctx.path !== '/' && !ctx.path.endsWith('.html')) return next();
+  // 只处理 HTML 入口路径（/、/agent 和明确的 .html），其他静态资源走 Vite/prod 静态服务
+  if (ctx.path !== '/' && ctx.path !== '/agent' && !ctx.path.endsWith('.html')) return next();
+
+  // 诊断日志：每次 SSR 渲染都打印，便于排查"页面是否在循环 reload"
+  console.log(`[SSR] ${new Date().toISOString()} ${ctx.path} ua=${ctx.get('user-agent')?.slice(0, 60)}`);
 
   try {
     const url = ctx.path;

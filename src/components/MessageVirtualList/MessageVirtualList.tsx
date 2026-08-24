@@ -93,6 +93,9 @@ export function MessageVirtualList<T>({
   followStreaming = true,
   className,
 }: Props<T>) {
+  // 关键兜底：父级可能因时序问题传 0 进来。给 1px 让滚动容器至少有个高度，touch 事件才有目标。
+  // 一旦父级 ResizeObserver 触发新值，setListHeight 会把这个覆盖成正确高度。
+  const safeHeight = height > 0 ? height : 1;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   // 缓存每条 item 的高度：Map<key, height>
@@ -305,8 +308,18 @@ export function MessageVirtualList<T>({
       className={className}
       onScroll={onScroll}
       style={{
-        height,
+        height: safeHeight,
+        // 关键：iOS Safari / WebView 内 div 滚动必须显式声明 -webkit-overflow-scrolling: touch，
+        // 否则触摸拖动时整个页面跟随移动，但内部 div 不会滚动（典型"页面无法向下滚动"症状）。
+        WebkitOverflowScrolling: 'touch',
+        // 关键：滚动到顶部/底部时不让事件冒泡到 body，避免触发"下拉刷新"和"页面整体橡皮筋"
+        overscrollBehavior: 'contain',
+        // 关键：touch-action 明确"允许垂直平移"，避免被全局 manipulation 误判拦截
+        touchAction: 'pan-y',
         overflowY: 'auto',
+        overflowX: 'hidden',
+        // 兜底：父级 flex 高度为 0 时也能保证至少有一行可滚动（避免被父级 overflow:hidden 吞掉）
+        minHeight: 1,
         position: 'relative',
       }}
     >

@@ -135,7 +135,9 @@ function onUseSuggestion(s: AgentSuggestion) {
   if (!activeSessionId.value) return;
   if (s.applied) return;
   send({ type: 'agent.use_suggestion', sessionId: activeSessionId.value, suggestionId: s.id });
-  send({ type: 'agent.send', sessionId: activeSessionId.value, parts: s.parts });
+  // 关键：服务端不会回 message 事件给客服端自己，必须在 store 乐观追加
+  // 让 UI 立刻显示这条客服消息（handleSystemEvent 已加按 id 去重）
+  store.sendAgentMessage(activeSessionId.value, s.parts);
   store.markSuggestionApplied(activeSessionId.value, s.id);
   antdMessage.success('已发送推荐话术');
 }
@@ -162,6 +164,9 @@ function onSendMessage(e: Event) {
       parts.push({ type: 'file', name: a.name, size: a.size, url: a.url, mime: a.mime });
     }
   }
+  // 关键：服务端不会回 message 事件给客服端自己（只回 message_ack），
+  // 必须在 store 乐观追加，让 UI 立刻显示这条客服消息
+  store.sendAgentMessage(detail.sessionId, parts);
   send({ type: 'agent.send', sessionId: detail.sessionId, parts });
 }
 
@@ -237,14 +242,14 @@ function onExit() {
         </Space>
       </div>
       <div class="agent-workbench__actions">
-        <Button
-          :icon="ReloadOutlined"
-          :disabled="!activeSession"
-          @click="fetchSuggestions"
-        >
+        <Button :disabled="!activeSession" @click="fetchSuggestions">
+          <template #icon><ReloadOutlined /></template>
           刷新推荐
         </Button>
-        <Button :icon="LogoutOutlined" @click="onExit">退出</Button>
+        <Button @click="onExit">
+          <template #icon><LogoutOutlined /></template>
+          退出
+        </Button>
       </div>
     </header>
 
@@ -254,6 +259,7 @@ function onExit() {
         :on-accept-queue="onAcceptQueue"
         :on-select-session="onSelectSession"
         :active-sessions="workbench.activeSessions"
+        :user-info-by-client="workbench.userInfoByClient"
         :pending-queue="workbench.pendingQueue"
         :history-sessions="historySessions"
         :selected-history-session-id="selectedHistorySessionId"
@@ -305,7 +311,7 @@ function onExit() {
         :on-refresh="fetchSuggestions"
         :on-use-suggestion="onUseSuggestion"
         :auto-trigger="autoTrigger"
-        :on-auto-trigger-change="(v: boolean) => (autoTrigger = v)"
+        :on-auto-trigger-change="(v: any) => (autoTrigger = !!v)"
       />
       <aside v-else class="agent-tools agent-tools--empty">
         <div class="agent-tools__empty">

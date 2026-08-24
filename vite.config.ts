@@ -116,4 +116,9 @@ export default defineConfig({
       // 不显式声明 input，让 Vite 通过 index.html 自动发现入口
     },
   },
+  server: {
+    // 同时监听 IPv4 + IPv6（macOS 上 localhost 默认只解析到 [::1]，
+    // 不开 IPv4 会导致 curl 127.0.0.1 / NestJS 302 跳转都连不上）
+    host: true,
+  },
 });

@@ -108,7 +108,7 @@ export function useChat() {
     }
 
     const userMsg: Message = {
-      id: nanoid(10),
+      id: nanoid(12),
       sessionId,
       role: 'user',
       parts: userParts,
@@ -126,7 +126,7 @@ export function useChat() {
     }
 
     // 5) 创建占位 AI 消息（status: 'streaming' 即为"正在生成"的唯一真值源）
-    const aiMsgId = nanoid(10);
+    const aiMsgId = nanoid(12);
     state.appendMessage(sessionId, {
       id: aiMsgId,
       sessionId,

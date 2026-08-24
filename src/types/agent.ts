@@ -28,14 +28,33 @@ export type QueueReason = 'normal' | 'vip' | 'after_hours' | 'all_busy';
 export type SystemEvent =
   | { type: 'queue_accepted'; position: number; estimatedWaitSec: number; reason?: QueueReason }
   | { type: 'queue_position'; position: number; estimatedWaitSec: number }
-  | { type: 'queue_assigned'; agentId: string; agentName: string; agentAvatar?: string; sessionId: string }
+  | {
+      type: 'queue_assigned';
+      /** 客服 id / 名称 / 头像（接收方是 agent 时是它自己，接收方是 client 时是分配给它的客服） */
+      agentId: string;
+      agentName: string;
+      agentAvatar?: string;
+      /** 客户端 id（接收方是 agent 时必填，让客服端 UI 能立即显示用户信息） */
+      clientId?: string;
+      /** 用户名 / 头像（同上，让客服端 UI 不显示"未知"） */
+      userName?: string;
+      userAvatar?: string;
+      sessionId: string;
+    }
   | { type: 'queue_cancelled' }
   | { type: 'queue_timeout'; reason: string }
-  | { type: 'message'; message: import('./message').Message }
+  | { type: 'message'; message: import('./message').Message; serverTs: number }
   | { type: 'message_ack'; messageId: string; timestamp: number }
   | { type: 'typing'; from: 'user' | 'agent'; isTyping: boolean }
   | { type: 'session_ended'; reason: 'user' | 'agent' | 'timeout' | 'error'; sessionId?: string }
-  | { type: 'session_restored'; messages: import('./message').Message[] }
+  | {
+      type: 'session_restored';
+      /** 会话 id（客服端重连时可能有多个活跃会话，必须带；客户端通常只有一个活跃会话，可省略） */
+      sessionId?: string;
+      messages: import('./message').Message[];
+      /** 服务端时间戳：本次拉取范围内最大的消息 createdAt，可作为下次 since 的起点 */
+      serverTs?: number;
+    }
   | { type: 'presence'; onlineAgents: number; queueLength: number }
   // ===== 历史会话（仅 ended 状态的会话） =====
   // 服务端在客服端 / 客户端连接时立即推一次，后续 endSession 时增量追加
@@ -210,6 +229,16 @@ export interface AgentWorkbench {
   suggestions: Record<string, AgentSuggestion[]>;
   /** 当前正在 streaming 的意图（用于右侧工具栏显示加载态） */
   streamingIntent: Record<string, { intentId: string; category: string } | null>;
+  /**
+   * 用户信息缓存：key = clientId（fallback sessionId）
+   * 解决 queue_assigned 事件投递过慢时 UI 显示"用户 ？/未知"的问题。
+   * 在 onSystemEvent('queue_assigned') 收到 userName/userAvatar 时填充，
+   * SessionList / MessageArea 等展示组件可优先从这里读。
+   */
+  userInfoByClient: Record<
+    string,
+    { userName?: string; userAvatar?: string }
+  >;
   /** 服务端在线客服数 / 排队总数（用于顶部状态条） */
   presence: {
     onlineAgents: number;

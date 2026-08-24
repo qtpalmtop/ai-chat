@@ -1,0 +1,50 @@
+{
+  "name": "server-nest",
+  "version": "1.0.0",
+  "description": "AI 对话助手 - NestJS 后端（PostgreSQL + socket.io）",
+  "private": true,
+  "scripts": {
+    "dev": "nest start --watch",
+    "dev:debug": "nest start --debug --watch",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:prod": "NODE_ENV=production node dist/main.js",
+    "db:up": "docker compose up -d postgres && node ./scripts/wait-for-pg.mjs",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "db:reset": "docker compose down -v && docker compose up -d postgres && node ./scripts/wait-for-pg.mjs",
+    "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/database/data-source.ts",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts",
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts",
+    "seed": "ts-node -r tsconfig-paths/register src/database/seeds/seed-suggestions.ts",
+    "test": "node --test test/*.test.mjs",
+    "test:e2e": "node test/agent-ws-e2e.mjs",
+    "lint": "eslint \"{src,test}/**/*.ts\" --fix",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.4.7",
+    "@nestjs/config": "^3.2.3",
+    "@nestjs/core": "^10.4.7",
+    "@nestjs/platform-express": "^10.4.7",
+    "@nestjs/platform-socket.io": "^10.4.7",
+    "@nestjs/typeorm": "^10.0.2",
+    "@nestjs/websockets": "^10.4.7",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "pg": "^8.13.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "socket.io": "^4.8.1",
+    "typeorm": "^0.3.20"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.7",
+    "@nestjs/schematics": "^10.2.3",
+    "@types/express": "^5.0.0",
+    "@types/node": "^20.17.6",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.6.3"
+  }
+}

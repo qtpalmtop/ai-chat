@@ -255,6 +255,26 @@ export const InputPanel: React.FC = () => {
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // 兜底：Cmd/Ctrl + A 全选。
+      // antd Input.TextArea 在 controlled value 模式下，
+      // macOS Chrome/Safari 的 Cmd+A 浏览器默认 select-all 行为不可靠
+      // （puppeteer + 真实浏览器均可复现：selection 仍停在光标处）。
+      // 手动 select() 兜底，不 preventDefault 让浏览器先尝试默认行为。
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A')) {
+        const t = e.currentTarget;
+        if (t && typeof t.select === 'function') {
+          // 延后到 keydown 同步代码执行完后再 select，避免 antd 内部 onKeydown
+          // 链路上有 setSelectionRange 之类的覆盖
+          requestAnimationFrame(() => {
+            try {
+              t.focus();
+              t.select();
+            } catch {
+              /* noop */
+            }
+          });
+        }
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         onSend();

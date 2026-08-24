@@ -1,29 +1,22 @@
 /**
- * useAgentSocket：客户端 / 客服端共享的 WebSocket Hook
+ * useAgentSocket (NestJS + socket.io 版)
  *
- * 能力：
- *   1. 自动建立连接（传入 role + id）
- *   2. 心跳（30s ping + 收到任意消息恢复 alive）
- *   3. 断线重连（指数退避：1s/2s/4s/8s...，上限 30s）
- *   4. 消息去重（按 seq 单调递增）
- *   5. 暴露 send / onEvent / status
+ * 协议：
+ *   - 服务端：ws://host:3002/?role=client&userId=u_xxx  (默认 socket.io path = /socket.io)
+ *   - 上行：socket.emit('message', { type: 'client.*' | 'agent.*', ... })
+ *   - 下行：socket.on('<SystemEventType>', event => onEvent(event)) — 事件名 = event.type
  *
- * 设计原则：
- *   - 单一连接复用：role+id 相同则不重连
- *   - 事件透传：业务层（agentStore）订阅 onEvent 处理具体逻辑
- *   - 不耦合业务：hook 不直接修改 store，只暴露原始事件流
- *
- * 为什么用 useEffect 启停：
- *   - 组件 unmount 时关闭 ws，避免泄漏
- *   - role/id 变化时重连
+ * 关键设计：
+ *   - socket.io 自带重连、心跳、ACK，无需手写
+ *   - 保留 onEvent 透传给业务层（store）处理具体事件
+ *   - 兼容旧的 envelope 解析（如果服务端有发带 seq 的）→ 自动剥离
  */
-
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { io, Socket } from 'socket.io-client';
 import type {
   ClientMessage,
   AgentMessage,
   SystemEvent,
-  ServerEnvelope,
 } from '@/types/agent';
 
 export type ConnectionStatus =
@@ -36,32 +29,34 @@ export type ConnectionStatus =
 
 export interface UseAgentSocketOptions {
   role: 'client' | 'agent';
-  /** 用户 id 或 客服 id */
   id: string | null;
-  /** 展示名（首次 hello 时携带） */
   displayName?: string;
   displayAvatar?: string;
-  /** 是否自动连接（默认 true） */
   autoConnect?: boolean;
-  /** 业务事件回调 */
-  onEvent?: (event: SystemEvent, envelope: ServerEnvelope) => void;
-  /** 连接状态变化回调（用于驱动 store.connection） */
+  onEvent?: (event: SystemEvent) => void;
   onStatusChange?: (status: ConnectionStatus) => void;
 }
 
-const HEARTBEAT_INTERVAL_MS = 25_000; // < 服务端 30s
-const RECONNECT_BASE_MS = 1_000;
-const RECONNECT_MAX_MS = 30_000;
-const PING_FRAME = '{"type":"ping"}';
-
-function getWsUrl(role: string, id: string) {
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  // agent-ws.js 独立进程监听 3002；与 HTTP 服务 (3001/3003) 端口错开
+function getSocketUrl(role: string, id: string) {
   const host =
-    typeof window !== 'undefined' && window.location.port
+    typeof window !== 'undefined' && window.location.hostname
       ? window.location.hostname
       : 'localhost';
-  return `${proto}://${host}:3002/ws?role=${role}&id=${encodeURIComponent(id)}`;
+  // 注意：socket.io 默认 path 是 /socket.io，端口走 URL 显式指定
+  // NestJS 服务端口：HTTP = 3001, WebSocket（同进程） = 3001（共享）
+  const port = 3001;
+  return {
+    url: `http://${host}:${port}`,
+    options: {
+      path: '/socket.io',
+      transports: ['websocket', 'polling'] as ('websocket' | 'polling')[],
+      query: { role, id },
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 30000,
+    },
+  };
 }
 
 export function useAgentSocket(opts: UseAgentSocketOptions) {
@@ -76,13 +71,8 @@ export function useAgentSocket(opts: UseAgentSocketOptions) {
   } = opts;
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
-  const wsRef = useRef<WebSocket | null>(null);
-  const heartbeatRef = useRef<number | null>(null);
-  const reconnectTimerRef = useRef<number | null>(null);
-  const reconnectAttemptsRef = useRef(0);
-  const lastSeqRef = useRef(0);
+  const socketRef = useRef<Socket | null>(null);
   const closedByUserRef = useRef(false);
-  // 用 ref 持回调，避免 onEvent 引用变化导致重连
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
   const onStatusChangeRef = useRef(onStatusChange);
@@ -93,133 +83,116 @@ export function useAgentSocket(opts: UseAgentSocketOptions) {
     onStatusChangeRef.current?.(s);
   }, []);
 
-  const clearHeartbeat = () => {
-    if (heartbeatRef.current != null) {
-      window.clearInterval(heartbeatRef.current);
-      heartbeatRef.current = null;
-    }
-  };
-  const clearReconnect = () => {
-    if (reconnectTimerRef.current != null) {
-      window.clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-  };
-
-  const send = useCallback((msg: ClientMessage | AgentMessage) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-    try {
-      ws.send(JSON.stringify(msg));
-      return true;
-    } catch {
-      return false;
-    }
+  const send = useCallback((msg: ClientMessage | AgentMessage): boolean => {
+    const sock = socketRef.current;
+    if (!sock || !sock.connected) return false;
+    sock.emit('message', msg);
+    return true;
   }, []);
 
   const connect = useCallback(() => {
     if (!id) return;
-    if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
+    if (socketRef.current?.connected) return;
 
     closedByUserRef.current = false;
-    setStatusAndNotify(reconnectAttemptsRef.current > 0 ? 'reconnecting' : 'connecting');
+    setStatusAndNotify('connecting');
 
-    const ws = new WebSocket(getWsUrl(role, id));
-    wsRef.current = ws;
+    const { url, options } = getSocketUrl(role, id);
+    const sock = io(url, options);
+    socketRef.current = sock;
 
-    ws.addEventListener('open', () => {
-      reconnectAttemptsRef.current = 0;
+    sock.on('connect', () => {
       setStatusAndNotify('open');
-      // 发送 hello
+      // 上线即发 hello
       if (role === 'client') {
-        ws.send(
-          JSON.stringify({
-            type: 'client.hello',
-            clientId: id,
-            userId: id,
-            userName: displayName,
-            userAvatar: displayAvatar,
-          }),
-        );
+        sock.emit('message', {
+          type: 'client.hello',
+          clientId: id,
+          userId: id,
+          userName: displayName,
+          userAvatar: displayAvatar,
+        });
       } else {
-        ws.send(
-          JSON.stringify({
-            type: 'agent.hello',
-            agentId: id,
-            agentName: displayName,
-            agentAvatar: displayAvatar,
-          }),
-        );
+        sock.emit('message', {
+          type: 'agent.hello',
+          agentId: id,
+          agentName: displayName,
+          agentAvatar: displayAvatar,
+        });
       }
-      // 启动心跳
-      clearHeartbeat();
-      heartbeatRef.current = window.setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          try {
-            ws.send(PING_FRAME);
-          } catch {}
-        }
-      }, HEARTBEAT_INTERVAL_MS);
     });
 
-    ws.addEventListener('message', (e) => {
-      let env: ServerEnvelope;
-      try {
-        env = JSON.parse(e.data);
-      } catch {
-        return;
-      }
-      // 序号去重：防止服务端重传/重连后重复推送
-      if (typeof env.seq === 'number' && env.seq <= lastSeqRef.current) return;
-      if (typeof env.seq === 'number') lastSeqRef.current = env.seq;
-      onEventRef.current?.(env.payload, env);
-    });
-
-    ws.addEventListener('close', () => {
-      clearHeartbeat();
-      wsRef.current = null;
+    sock.on('disconnect', (reason) => {
       if (closedByUserRef.current) {
         setStatusAndNotify('closed');
         return;
       }
-      // 自动重连
-      const attempt = reconnectAttemptsRef.current++;
-      const delay = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS);
       setStatusAndNotify('reconnecting');
-      reconnectTimerRef.current = window.setTimeout(() => {
-        reconnectTimerRef.current = null;
-        connect();
-      }, delay);
+      void reason;
     });
 
-    ws.addEventListener('error', () => {
-      // 'close' 会紧跟其后，错误状态由 close 处理
+    sock.on('connect_error', () => {
       setStatusAndNotify('error');
     });
+
+    // 业务事件：监听所有可能的下行事件类型
+    // 客户端只关心 SystemEvent 里的 type 字段，把事件原样透传给业务层
+    const dispatch = (event: unknown) => {
+      // 兼容两种格式：
+      //   1) 直接是 SystemEvent（{ type, ... }）
+      //   2) 包了信封的 { seq, ts, payload }（旧协议残留）
+      if (event && typeof event === 'object') {
+        const e = event as { type?: string; payload?: SystemEvent };
+        if (e.type && e.type !== 'payload') {
+          onEventRef.current?.(e as SystemEvent);
+        } else if (e.payload && e.payload.type) {
+          onEventRef.current?.(e.payload);
+        }
+      }
+    };
+
+    // 动态注册避免写死（事件名 = SystemEvent.type 字符串）
+    for (const t of [
+      'queue_accepted',
+      'queue_position',
+      'queue_assigned',
+      'queue_cancelled',
+      'queue_timeout',
+      'message',
+      'message_ack',
+      'typing',
+      'session_ended',
+      'session_restored',
+      'presence',
+      'history_list',
+      'history_session',
+      'queue_update',
+      'suggestion_start',
+      'suggestion_chunk',
+      'error',
+    ]) {
+      sock.on(t, dispatch);
+    }
   }, [role, id, displayName, displayAvatar, setStatusAndNotify]);
 
   const disconnect = useCallback(() => {
     closedByUserRef.current = true;
-    clearHeartbeat();
-    clearReconnect();
-    if (wsRef.current) {
+    if (socketRef.current) {
       try {
-        wsRef.current.close(1000, 'client disconnect');
-      } catch {}
-      wsRef.current = null;
+        socketRef.current.disconnect();
+      } catch {
+        /* noop */
+      }
+      socketRef.current = null;
     }
     setStatusAndNotify('closed');
   }, [setStatusAndNotify]);
 
-  // 用 ref 持有最新的 connect / disconnect，避免它们身份变化触发自动 effect 重连
   const connectRef = useRef(connect);
   connectRef.current = connect;
   const disconnectRef = useRef(disconnect);
   disconnectRef.current = disconnect;
 
-  // 自动连接 / 断开
-  // deps 只放业务参数（autoConnect / id）；connect / disconnect 通过 ref 访问，
-  // 防止它们的 useCallback 身份变化导致 effect 重复挂载/卸载，把刚开好的 WS 立刻关掉
   useEffect(() => {
     if (!autoConnect || !id) return;
     connectRef.current();
@@ -233,7 +206,6 @@ export function useAgentSocket(opts: UseAgentSocketOptions) {
     send,
     connect,
     disconnect,
-    /** 是否已连接（用于 send 前的快速判断） */
     isOpen: status === 'open',
   };
 }

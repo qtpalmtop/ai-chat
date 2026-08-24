@@ -125,7 +125,7 @@ export function useChat() {
     }
 
     // 5) 创建占位 AI 消息
-    const aiMsgId = nanoid(10);
+    const aiMsgId = nanoid(12);
     store.appendMessage(sessionId, {
       id: aiMsgId,
       sessionId,

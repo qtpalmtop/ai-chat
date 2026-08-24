@@ -7,8 +7,8 @@
  *   3. 历史会话（historySessions，session_ended 后转存）
  */
 
-<script lang="ts">
-import { defineComponent, h, onBeforeUnmount, onMounted, ref, type PropType } from 'vue';
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { Avatar, Badge, Button, Empty, Space, Tag, Tooltip } from 'ant-design-vue';
 import {
   UserOutlined,
@@ -52,352 +52,258 @@ function isOverdue(queuedAt: number, now: number): boolean {
   return now - queuedAt > QUEUE_WARN_MS;
 }
 
-export default defineComponent({
-  name: 'SessionList',
-  props: {
-    activeSessionId: { type: String as PropType<string | null>, default: null },
-    onAcceptQueue: { type: Function as PropType<(id: string) => void>, required: true },
-    onSelectSession: { type: Function as PropType<(id: string) => void>, required: true },
-    activeSessions: { type: Object as PropType<Record<string, AgentSession>>, required: true },
-    pendingQueue: { type: Array as PropType<PendingQueueItem[]>, required: true },
-    /** 历史会话列表（按 endedAt 倒序） */
-    historySessions: {
-      type: Array as PropType<HistorySessionItem[]>,
-      default: () => [],
-    },
-    /** 当前选中的历史会话 id */
-    selectedHistorySessionId: { type: String as PropType<string | null>, default: null },
-    /** 点击历史会话项 */
-    onSelectHistory: { type: Function as PropType<(id: string) => void>, default: null },
-    /** 刷新历史列表 */
-    onRefreshHistory: { type: Function as PropType<() => void>, default: null },
-    presence: {
-      type: Object as PropType<{ onlineAgents: number; queueLength: number }>,
-      required: true,
-    },
-    isConnected: { type: Boolean, required: true },
-  },
-  setup(props) {
-    // 每秒刷一次"现在"，让"X 秒前"按秒跳；卸载时清 timer
-    const now = ref(Date.now());
-    let timer: number | null = null;
-    onMounted(() => {
-      timer = window.setInterval(() => {
-        now.value = Date.now();
-      }, 1000);
-    });
-    onBeforeUnmount(() => {
-      if (timer != null) {
-        window.clearInterval(timer);
-        timer = null;
-      }
-    });
-    return () => {
-      const activeList = Object.values(props.activeSessions).filter(
-        (s) => s.status === 'inSession',
-      );
+const props = defineProps<{
+  activeSessionId: string | null;
+  onAcceptQueue: (id: string) => void;
+  onSelectSession: (id: string) => void;
+  activeSessions: Record<string, AgentSession>;
+  /**
+   * 用户信息缓存：key = clientId。在 queue_assigned 时已写入 userName/userAvatar，
+   * 用它替换"用户 xxxx/?"显示为真实用户名/头像。
+   */
+  userInfoByClient?: Record<string, { userName?: string; userAvatar?: string }>;
+  pendingQueue: PendingQueueItem[];
+  /** 历史会话列表（按 endedAt 倒序） */
+  historySessions?: HistorySessionItem[];
+  /** 当前选中的历史会话 id */
+  selectedHistorySessionId?: string | null;
+  /** 点击历史会话项 */
+  onSelectHistory?: (id: string) => void;
+  /** 刷新历史列表 */
+  onRefreshHistory?: () => void;
+  presence: { onlineAgents: number; queueLength: number };
+  isConnected: boolean;
+}>();
 
-      return h('aside', { class: 'agent-sidebar' }, [
-        h('div', { class: 'agent-sidebar__head' }, [
-          h('div', { class: 'agent-sidebar__title' }, '客服工作台'),
-          h('div', { class: 'agent-sidebar__presence' }, [
-            h(
-              Badge,
-              {
-                status: props.isConnected ? 'success' : 'default',
-              },
-              {
-                default: () =>
-                  h(
-                    'span',
-                    { class: 'agent-sidebar__presence-text' },
-                    `${props.presence.onlineAgents} 客服在线 · ${props.presence.queueLength} 人排队`,
-                  ),
-              },
-            ),
-          ]),
-        ]),
-
-        // 待接单区
-        h('div', { class: 'agent-sidebar__section' }, [
-          h('div', { class: 'agent-sidebar__section-title' }, [
-            h(HourglassOutlined),
-            ' 待接单',
-            h('span', { class: 'agent-sidebar__count' }, String(props.pendingQueue.length)),
-          ]),
-          props.pendingQueue.length === 0
-            ? h(Empty, {
-                image: Empty.PRESENTED_IMAGE_SIMPLE,
-                description: '暂无排队',
-                class: 'agent-sidebar__empty',
-              })
-            : h(
-                'div',
-                { class: 'agent-sidebar__list' },
-                props.pendingQueue.map((item) => {
-                  const reason = REASON_LABEL[item.reason] || REASON_LABEL.normal;
-                  const overdue = isOverdue(item.queuedAt, now.value);
-                  return h(
-                    'div',
-                    {
-                      class: `agent-sidebar__item ${overdue ? 'is-overdue' : ''}`,
-                      key: item.clientId,
-                    },
-                    [
-                      h('div', { class: 'agent-sidebar__item-row' }, [
-                        h(
-                          Avatar,
-                          { size: 'small' },
-                          { icon: () => h(UserOutlined) },
-                        ),
-                        h(
-                          'span',
-                          { class: 'agent-sidebar__item-name' },
-                          item.userName || `用户${item.clientId.slice(-4)}`,
-                        ),
-                        h(
-                          Tag,
-                          { color: reason.color, class: 'agent-sidebar__item-tag' },
-                          () => reason.text,
-                        ),
-                        overdue
-                          ? h(
-                              Tag,
-                              { color: 'error', class: 'agent-sidebar__item-tag' },
-                              {
-                                icon: () => h(WarningFilled),
-                                default: () => '超时',
-                              },
-                            )
-                          : null,
-                      ]),
-                      item.lastUserMessage
-                        ? h(
-                            'div',
-                            {
-                              class: 'agent-sidebar__item-msg',
-                              title: item.lastUserMessage,
-                            },
-                            item.lastUserMessage,
-                          )
-                        : null,
-                      h('div', { class: 'agent-sidebar__item-row agent-sidebar__item-meta' }, [
-                        overdue
-                          ? h(WarningFilled, { style: { color: '#ff4d4f' } })
-                          : h(ClockCircleOutlined),
-                        ' ',
-                        h(
-                          'span',
-                          {
-                            style: overdue
-                              ? { color: '#ff4d4f', fontWeight: 500 }
-                              : undefined,
-                          },
-                          timeAgo(item.queuedAt, now.value),
-                        ),
-                        h('div', { style: { flex: '1' } }),
-                        h(
-                          Button,
-                          {
-                            type: 'primary',
-                            size: 'small',
-                            disabled: !props.isConnected,
-                            onClick: () => props.onAcceptQueue(item.clientId),
-                          },
-                          () => '接单',
-                        ),
-                      ]),
-                    ],
-                  );
-                }),
-              ),
-        ]),
-
-        // 进行中区
-        h('div', { class: 'agent-sidebar__section' }, [
-          h('div', { class: 'agent-sidebar__section-title' }, [
-            h(CheckCircleOutlined),
-            ' 进行中',
-            h('span', { class: 'agent-sidebar__count' }, String(activeList.length)),
-          ]),
-          activeList.length === 0
-            ? h(Empty, {
-                image: Empty.PRESENTED_IMAGE_SIMPLE,
-                description: '暂无会话',
-                class: 'agent-sidebar__empty',
-              })
-            : h(
-                'div',
-                { class: 'agent-sidebar__list' },
-                activeList.map((sess) => {
-                  const lastMsg = sess.messages[sess.messages.length - 1];
-                  const lastPreview = lastMsg
-                    ? lastMsg.parts
-                        .filter((p) => p.type === 'text' || p.type === 'markdown')
-                        .map((p) => p.content)
-                        .join(' ')
-                        .slice(0, 40)
-                    : '（暂无消息）';
-                  const isActive = sess.sessionId === props.activeSessionId;
-                  return h(
-                    Tooltip,
-                    {
-                      key: sess.sessionId,
-                      title: lastPreview,
-                      placement: 'right',
-                    },
-                    {
-                      default: () =>
-                        h(
-                          'div',
-                          {
-                            class: `agent-sidebar__item agent-sidebar__item--active ${
-                              isActive ? 'is-active' : ''
-                            }`,
-                            onClick: () =>
-                              sess.sessionId && props.onSelectSession(sess.sessionId),
-                          },
-                          [
-                            h('div', { class: 'agent-sidebar__item-row' }, [
-                              h(
-                                Avatar,
-                                { size: 'small' },
-                                { icon: () => h(UserOutlined) },
-                              ),
-                              h(
-                                'span',
-                                { class: 'agent-sidebar__item-name' },
-                                `用户 ${sess.clientId?.slice(-4) || '?'}`,
-                              ),
-                            ]),
-                            h('div', { class: 'agent-sidebar__item-msg' }, lastPreview),
-                            h('div', { class: 'agent-sidebar__item-row agent-sidebar__item-meta' }, [
-                              h(
-                                Space,
-                                { size: 4 },
-                                {
-                                  default: () => [
-                                    h(
-                                      Tag,
-                                      { color: 'cyan', style: { margin: 0 } },
-                                      () => `${sess.messages.length} 条`,
-                                    ),
-                                    sess.startedAt
-                                      ? h(
-                                          'span',
-                                          { style: { color: '#8c8c8c' } },
-                                          timeAgo(sess.startedAt, now.value),
-                                        )
-                                      : null,
-                                  ],
-                                },
-                              ),
-                            ]),
-                          ],
-                        ),
-                    },
-                  );
-                }),
-              ),
-        ]),
-
-        // 历史会话区
-        h('div', { class: 'agent-sidebar__section' }, [
-          h('div', { class: 'agent-sidebar__section-title' }, [
-            h(HistoryOutlined),
-            ' 历史会话',
-            h('span', { class: 'agent-sidebar__count' }, String(props.historySessions.length)),
-            h('div', { style: { flex: '1' } }),
-            h(
-              Button,
-              {
-                type: 'text',
-                size: 'small',
-                title: '刷新历史会话',
-                disabled: !props.isConnected,
-                onClick: () => props.onRefreshHistory?.(),
-              },
-              () => h(HistoryOutlined),
-            ),
-          ]),
-          props.historySessions.length === 0
-            ? h(Empty, {
-                image: Empty.PRESENTED_IMAGE_SIMPLE,
-                description: '暂无历史会话',
-                class: 'agent-sidebar__empty',
-              })
-            : h(
-                'div',
-                { class: 'agent-sidebar__list' },
-                props.historySessions.map((item) => {
-                  const reason = END_REASON_LABEL[item.endReason] || END_REASON_LABEL.user;
-                  const preview = item.lastUserMessage || item.lastAgentMessage || '（无消息）';
-                  const isSelected = item.sessionId === props.selectedHistorySessionId;
-                  return h(
-                    Tooltip,
-                    {
-                      key: item.sessionId,
-                      title: preview,
-                      placement: 'right',
-                    },
-                    {
-                      default: () =>
-                        h(
-                          'div',
-                          {
-                            class: `agent-sidebar__item agent-sidebar__item--history ${
-                              isSelected ? 'is-active' : ''
-                            }`,
-                            onClick: () => props.onSelectHistory?.(item.sessionId),
-                          },
-                          [
-                            h('div', { class: 'agent-sidebar__item-row' }, [
-                              h(
-                                Avatar,
-                                { size: 'small' },
-                                { icon: () => h(UserOutlined) },
-                              ),
-                              h(
-                                'span',
-                                { class: 'agent-sidebar__item-name' },
-                                item.userName || `用户 ${item.clientId?.slice(-4) || '?'}`,
-                              ),
-                              h(
-                                Tag,
-                                { color: reason.color, class: 'agent-sidebar__item-tag' },
-                                () => reason.text,
-                              ),
-                            ]),
-                            h('div', { class: 'agent-sidebar__item-msg' }, preview),
-                            h('div', { class: 'agent-sidebar__item-row agent-sidebar__item-meta' }, [
-                              h(
-                                Space,
-                                { size: 4 },
-                                {
-                                  default: () => [
-                                    h(
-                                      Tag,
-                                      { color: 'default', style: { margin: 0 } },
-                                      () => [h(MessageOutlined), ` ${item.messageCount}`],
-                                    ),
-                                    h(
-                                      'span',
-                                      { style: { color: '#8c8c8c' } },
-                                      timeAgo(item.endedAt, now.value),
-                                    ),
-                                  ],
-                                },
-                              ),
-                            ]),
-                          ],
-                        ),
-                    },
-                  );
-                }),
-              ),
-        ]),
-      ]);
-    };
-  },
+// 每秒刷一次"现在"，让"X 秒前"按秒跳；卸载时清 timer
+const now = ref(Date.now());
+let timer: number | null = null;
+onMounted(() => {
+  timer = window.setInterval(() => {
+    now.value = Date.now();
+  }, 1000);
 });
+onBeforeUnmount(() => {
+  if (timer != null) {
+    window.clearInterval(timer);
+    timer = null;
+  }
+});
+
+const activeList = computed(() =>
+  Object.values(props.activeSessions).filter((s) => s.status === 'inSession'),
+);
+
+function lastPreviewOf(sess: AgentSession): string {
+  const lastMsg = sess.messages[sess.messages.length - 1];
+  if (!lastMsg) return '（暂无消息）';
+  return lastMsg.parts
+    .filter((p) => p.type === 'text' || p.type === 'markdown')
+    .map((p) => p.content)
+    .join(' ')
+    .slice(0, 40);
+}
 </script>
+
+<template>
+  <aside class="agent-sidebar">
+    <div class="agent-sidebar__head">
+      <div class="agent-sidebar__title">客服工作台</div>
+      <div class="agent-sidebar__presence">
+        <Badge :status="isConnected ? 'success' : 'default'">
+          <span class="agent-sidebar__presence-text">
+            {{ presence.onlineAgents }} 客服在线 · {{ presence.queueLength }} 人排队
+          </span>
+        </Badge>
+      </div>
+    </div>
+
+    <!-- 待接单区 -->
+    <div class="agent-sidebar__section">
+      <div class="agent-sidebar__section-title">
+        <HourglassOutlined /> 待接单
+        <span class="agent-sidebar__count">{{ pendingQueue.length }}</span>
+      </div>
+      <Empty
+        v-if="pendingQueue.length === 0"
+        :image="Empty.PRESENTED_IMAGE_SIMPLE"
+        description="暂无排队"
+        class="agent-sidebar__empty"
+      />
+      <div v-else class="agent-sidebar__list">
+        <div
+          v-for="item in pendingQueue"
+          :key="item.clientId"
+          :class="['agent-sidebar__item', { 'is-overdue': isOverdue(item.queuedAt, now) }]"
+        >
+          <div class="agent-sidebar__item-row">
+            <Avatar size="small">
+              <template #icon><UserOutlined /></template>
+            </Avatar>
+            <span class="agent-sidebar__item-name">
+              {{ item.userName || `用户${item.clientId.slice(-4)}` }}
+            </span>
+            <Tag
+              :color="(REASON_LABEL[item.reason] || REASON_LABEL.normal).color"
+              class="agent-sidebar__item-tag"
+            >
+              {{ (REASON_LABEL[item.reason] || REASON_LABEL.normal).text }}
+            </Tag>
+            <Tag
+              v-if="isOverdue(item.queuedAt, now)"
+              color="error"
+              class="agent-sidebar__item-tag"
+            >
+              <template #icon><WarningFilled /></template>
+              超时
+            </Tag>
+          </div>
+          <div
+            v-if="item.lastUserMessage"
+            class="agent-sidebar__item-msg"
+            :title="item.lastUserMessage"
+          >
+            {{ item.lastUserMessage }}
+          </div>
+          <div class="agent-sidebar__item-row agent-sidebar__item-meta">
+            <WarningFilled
+              v-if="isOverdue(item.queuedAt, now)"
+              style="color: #ff4d4f"
+            />
+            <ClockCircleOutlined v-else />
+            <span :style="isOverdue(item.queuedAt, now) ? { color: '#ff4d4f', fontWeight: 500 } : undefined">
+              {{ timeAgo(item.queuedAt, now) }}
+            </span>
+            <div style="flex: 1"></div>
+            <Button
+              type="primary"
+              size="small"
+              :disabled="!isConnected"
+              @click="onAcceptQueue(item.clientId)"
+            >
+              接单
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 进行中区 -->
+    <div class="agent-sidebar__section">
+      <div class="agent-sidebar__section-title">
+        <CheckCircleOutlined /> 进行中
+        <span class="agent-sidebar__count">{{ activeList.length }}</span>
+      </div>
+      <Empty
+        v-if="activeList.length === 0"
+        :image="Empty.PRESENTED_IMAGE_SIMPLE"
+        description="暂无会话"
+        class="agent-sidebar__empty"
+      />
+      <div v-else class="agent-sidebar__list">
+        <Tooltip
+          v-for="sess in activeList"
+          :key="sess.sessionId"
+          :title="lastPreviewOf(sess)"
+          placement="right"
+        >
+          <div
+            :class="[
+              'agent-sidebar__item',
+              'agent-sidebar__item--active',
+              { 'is-active': sess.sessionId === activeSessionId },
+            ]"
+            @click="sess.sessionId && onSelectSession(sess.sessionId)"
+          >
+            <div class="agent-sidebar__item-row">
+              <Avatar size="small" :src="userInfoByClient?.[sess.clientId || '']?.userAvatar">
+                <template #icon>
+                  <UserOutlined v-if="!userInfoByClient?.[sess.clientId || '']?.userAvatar" />
+                </template>
+              </Avatar>
+              <span class="agent-sidebar__item-name">
+                {{ userInfoByClient?.[sess.clientId || '']?.userName || `用户 ${sess.clientId?.slice(-4) || '?'}` }}
+              </span>
+            </div>
+            <div class="agent-sidebar__item-msg">{{ lastPreviewOf(sess) }}</div>
+            <div class="agent-sidebar__item-row agent-sidebar__item-meta">
+              <Space :size="4">
+                <Tag color="cyan" style="margin: 0">{{ sess.messages.length }} 条</Tag>
+                <span v-if="sess.startedAt" style="color: #8c8c8c">
+                  {{ timeAgo(sess.startedAt, now) }}
+                </span>
+              </Space>
+            </div>
+          </div>
+        </Tooltip>
+      </div>
+    </div>
+
+    <!-- 历史会话区 -->
+    <div class="agent-sidebar__section">
+      <div class="agent-sidebar__section-title">
+        <HistoryOutlined /> 历史会话
+        <span class="agent-sidebar__count">{{ historySessions?.length || 0 }}</span>
+        <div style="flex: 1"></div>
+        <Button
+          type="text"
+          size="small"
+          title="刷新历史会话"
+          :disabled="!isConnected"
+          @click="onRefreshHistory?.()"
+        >
+          <HistoryOutlined />
+        </Button>
+      </div>
+      <Empty
+        v-if="!historySessions || historySessions.length === 0"
+        :image="Empty.PRESENTED_IMAGE_SIMPLE"
+        description="暂无历史会话"
+        class="agent-sidebar__empty"
+      />
+      <div v-else class="agent-sidebar__list">
+        <Tooltip
+          v-for="item in historySessions"
+          :key="item.sessionId"
+          :title="item.lastUserMessage || item.lastAgentMessage || '（无消息）'"
+          placement="right"
+        >
+          <div
+            :class="[
+              'agent-sidebar__item',
+              'agent-sidebar__item--history',
+              { 'is-active': item.sessionId === selectedHistorySessionId },
+            ]"
+            @click="onSelectHistory?.(item.sessionId)"
+          >
+            <div class="agent-sidebar__item-row">
+              <Avatar size="small">
+                <template #icon><UserOutlined /></template>
+              </Avatar>
+              <span class="agent-sidebar__item-name">
+                {{ item.userName || `用户 ${item.clientId?.slice(-4) || '?'}` }}
+              </span>
+              <Tag
+                :color="(END_REASON_LABEL[item.endReason] || END_REASON_LABEL.user).color"
+                class="agent-sidebar__item-tag"
+              >
+                {{ (END_REASON_LABEL[item.endReason] || END_REASON_LABEL.user).text }}
+              </Tag>
+            </div>
+            <div class="agent-sidebar__item-msg">
+              {{ item.lastUserMessage || item.lastAgentMessage || '（无消息）' }}
+            </div>
+            <div class="agent-sidebar__item-row agent-sidebar__item-meta">
+              <Space :size="4">
+                <Tag color="default" style="margin: 0">
+                  <MessageOutlined /> {{ item.messageCount }}
+                </Tag>
+                <span style="color: #8c8c8c">{{ timeAgo(item.endedAt, now) }}</span>
+              </Space>
+            </div>
+          </div>
+        </Tooltip>
+      </div>
+    </div>
+  </aside>
+</template>

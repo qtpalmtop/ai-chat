@@ -161,6 +161,19 @@ watchEffect(() => {
     scrollTop.value = el.scrollTop;
   });
 });
+
+/**
+ * 暴露滚动状态给父组件（ChatWindow）用于：
+ *   - userScrolledUp: 移动端"最后一条不在底部"判断
+ *   - isAtBottom: 兼容旧消费方（已废弃，但保留避免破坏外部用法）
+ *
+ * 注意：父组件拿到的 ref 在 `<script setup>` 里读 `.value` 才是 boolean；
+ * 模板里直接 `list.userScrolledUp`（解包后的 boolean）即可。
+ */
+defineExpose({
+  userScrolledUp: userScrolledUpRef,
+  isAtBottom: isAtBottomRef,
+});
 </script>
 
 <template>

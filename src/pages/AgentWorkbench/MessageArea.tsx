@@ -28,6 +28,7 @@ import {
 import { MessageItem } from '@/components/MessageItem/MessageItem';
 import { MessageVirtualList } from '@/components/MessageVirtualList/MessageVirtualList';
 import { InputPanel } from '@/components/InputPanel/InputPanel';
+import { useAgentStore } from '@/store/agentStore';
 import useIsomorphicLayoutEffect from '@/hooks/useIsomorphicLayoutEffect';
 import type { Message } from '@/types/message';
 import type { AgentSession } from '@/types/agent';
@@ -51,6 +52,11 @@ export const MessageArea: React.FC<MessageAreaProps> = ({ session, onEndSession,
   const listRef = useRef<HTMLDivElement>(null);
   const [listHeight, setListHeight] = useState(0);
   const [tick, setTick] = useState(0); // 触发 duration 文本每分钟更新
+  // 从 store 读 userInfoByClient 缓存，queue_assigned 时已写入 userName/userAvatar
+  const userInfoByClient = useAgentStore((s) => s.workbench.userInfoByClient);
+  const cached = session.clientId ? userInfoByClient[session.clientId] : undefined;
+  const displayName = cached?.userName || `用户 ${session.clientId?.slice(-6) || '未知'}`;
+  const displayAvatar = cached?.userAvatar;
 
   // 每 30s 触发一次重渲染，更新"接待时长"文本
   useEffect(() => {
@@ -239,6 +245,10 @@ const AgentInputPanel: React.FC<{ session: AgentSession }> = ({ session }) => {
   const [attachments, setAttachments] = useState<
     Array<{ kind: 'image' | 'file'; url: string; name: string; size: number; mime?: string }>
   >([]);
+  // 用户信息缓存：与 MessageArea 头部对齐，避免显示"用户 ?/未知"
+  const userInfoByClient = useAgentStore((s) => s.workbench.userInfoByClient);
+  const cached = session.clientId ? userInfoByClient[session.clientId] : undefined;
+  const displayName = cached?.userName || `用户 ${session.clientId?.slice(-6) || '未知'}`;
 
   const taRef = useRef<any>(null);
   const fileToDataURL = (file: File): Promise<string> =>
@@ -293,7 +303,7 @@ const AgentInputPanel: React.FC<{ session: AgentSession }> = ({ session }) => {
     <div className="agent-input">
       <div className="agent-input__head">
         <CustomerServiceOutlined style={{ color: '#00b894' }} />
-        <span>正在为用户 {session.clientId?.slice(-6) || '未知'} 服务</span>
+        <span>正在为用户 {displayName} 服务</span>
       </div>
 
       {attachments.length > 0 && (

@@ -17,12 +17,16 @@ export interface AgentSession {
   clientId?: string;
   /** 用户昵称 */
   userName?: string;
+  /** 用户头像 */
+  userAvatar?: string;
   /** 状态 */
   status: AgentSessionStatus;
   /** 队列位置（queued 时有效） */
   queuePosition?: number;
   /** 预估等待秒数 */
   estimatedWaitSec?: number;
+  /** 排队原因（与 QueueReason 同义，存到 session 上便于重连恢复） */
+  reason?: QueueReason;
   /** 接入时间（assigned 后） */
   startedAt?: number | null;
   /** 结束时间 */
@@ -31,6 +35,8 @@ export interface AgentSession {
   agentId?: string;
   /** 客服名 */
   agentName?: string;
+  /** 客服头像 */
+  agentAvatar?: string;
   /** 当前会话消息 */
   messages: Message[];
   /** 最近一次用户消息文本（用于侧栏预览） */
@@ -65,7 +71,7 @@ export type StreamingIntentMeta = {
   startedAt: number;
 };
 
-export type AgentConnection = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
+export type AgentConnection = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed' | 'error';
 
 // ============== WebSocket 协议 ==============
 
@@ -77,8 +83,8 @@ export interface ServerEnvelope {
 }
 
 export type ClientToServer =
-  | { type: 'client.hello'; clientId: string; userName?: string }
-  | { type: 'client.transfer_human'; reason: QueueReason; lastUserMessage?: string }
+  | { type: 'client.hello'; clientId: string; userId?: string; userName?: string; userAvatar?: string }
+  | { type: 'client.transfer_human'; reason: QueueReason; lastUserMessage?: string; category?: string }
   | { type: 'client.cancel_queue' }
   | { type: 'client.send'; sessionId: string; parts: MessagePart[]; clientMsgId?: string }
   | { type: 'client.typing'; sessionId: string; isTyping: boolean }
@@ -99,14 +105,32 @@ export type ClientToServer =
 export type SystemEvent =
   | { type: 'queue_accepted'; position: number; estimatedWaitSec: number; reason?: QueueReason }
   | { type: 'queue_position'; position: number; estimatedWaitSec: number }
-  | { type: 'queue_assigned'; agentId: string; agentName: string; agentAvatar?: string; sessionId: string }
+  | {
+      type: 'queue_assigned';
+      agentId: string;
+      agentName: string;
+      agentAvatar?: string;
+      /** 客户端 id（接收方是 agent 时必填，让客服端 UI 能立即显示用户信息） */
+      clientId?: string;
+      /** 用户名 / 头像（同上，避免 UI 显示"未知"） */
+      userName?: string;
+      userAvatar?: string;
+      sessionId: string;
+    }
   | { type: 'queue_cancelled' }
   | { type: 'queue_timeout'; reason: string }
-  | { type: 'message'; message: Message }
+  | { type: 'message'; message: Message; serverTs: number }
   | { type: 'message_ack'; messageId: string; timestamp: number }
   | { type: 'typing'; from: 'user' | 'agent'; isTyping: boolean }
   | { type: 'session_ended'; reason: 'user' | 'agent' | 'timeout' | 'error'; sessionId?: string }
-  | { type: 'session_restored'; messages: Message[] }
+  | {
+      type: 'session_restored';
+      /** 会话 id（客服端重连时可能有多个活跃会话，必须带；客户端通常只有一个活跃会话，可省略） */
+      sessionId?: string;
+      messages: Message[];
+      /** 服务端时间戳：本次拉取范围内最大的消息 createdAt，可作为下次 since 的起点 */
+      serverTs?: number;
+    }
   | { type: 'presence'; onlineAgents: number; queueLength: number }
   | {
       type: 'queue_update';

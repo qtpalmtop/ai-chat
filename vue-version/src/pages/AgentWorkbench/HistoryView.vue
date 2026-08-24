@@ -6,17 +6,8 @@
  * 底部：无输入框（已结束会话不能再发消息）
  */
 
-<script lang="ts">
-import {
-  defineComponent,
-  h,
-  ref,
-  computed,
-  watch,
-  onMounted,
-  onUnmounted,
-  type PropType,
-} from 'vue';
+<script setup lang="ts">
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { App, Avatar, Button, Empty, Space, Tag } from 'ant-design-vue';
 import { UserOutlined } from '@ant-design/icons-vue';
 import MessageItem from '@/components/MessageItem/MessageItem.vue';
@@ -38,170 +29,137 @@ function formatDuration(durationSec: number): string {
   return `${Math.floor(durationSec / 3600)} 小时 ${Math.floor((durationSec % 3600) / 60)} 分`;
 }
 
-export default defineComponent({
-  name: 'HistoryView',
-  props: {
-    item: { type: Object as PropType<HistorySessionItem | null>, default: null },
-    detail: { type: Object as PropType<HistorySessionDetail | null>, default: null },
-    loading: { type: Boolean, default: false },
-    onBack: { type: Function as PropType<() => void>, required: true },
-  },
-  setup(props) {
-    const { message: antdMessage } = App.useApp();
-    const listRef = ref<HTMLDivElement | null>(null);
-    const listHeight = ref(0);
-    let ro: ResizeObserver | null = null;
+const props = defineProps<{
+  item: HistorySessionItem | null;
+  detail: HistorySessionDetail | null;
+  loading: boolean;
+  onBack: () => void;
+}>();
 
-    onMounted(() => {
-      const el = listRef.value;
-      if (!el) return;
-      listHeight.value = el.clientHeight;
-      ro = new ResizeObserver(() => {
-        listHeight.value = el.clientHeight;
-      });
-      ro.observe(el);
-    });
+const { message: antdMessage } = App.useApp();
+const listRef = ref<HTMLDivElement | null>(null);
+const listHeight = ref(0);
+let ro: ResizeObserver | null = null;
 
-    onUnmounted(() => {
-      ro?.disconnect();
-    });
+onMounted(() => {
+  const el = listRef.value;
+  if (!el) return;
+  listHeight.value = el.clientHeight;
+  ro = new ResizeObserver(() => {
+    listHeight.value = el.clientHeight;
+  });
+  ro.observe(el);
+});
 
-    const messages = computed<readonly Message[]>(() => props.detail?.messages || []);
+onUnmounted(() => {
+  ro?.disconnect();
+});
 
-    const duration = computed(() => {
-      const d = props.detail;
-      if (!d?.startedAt || !d?.endedAt) return 0;
-      return Math.max(0, Math.floor((d.endedAt - d.startedAt) / 1000));
-    });
+const messages = computed<readonly Message[]>(() => props.detail?.messages || []);
 
-    const scrollToBottomKey = computed(() => `h-${messages.value.length}`);
+const duration = computed(() => {
+  const d = props.detail;
+  if (!d?.startedAt || !d?.endedAt) return 0;
+  return Math.max(0, Math.floor((d.endedAt - d.startedAt) / 1000));
+});
 
-    function scrollToBottom() {
-      const el = listRef.value;
-      if (el) el.scrollTop = el.scrollHeight;
-    }
+const scrollToBottomKey = computed(() => `h-${messages.value.length}`);
 
-    // 消息数量变化 → 滚到底
-    const noop = () => {};
-    const onCopy = (text: string) => {
-      navigator.clipboard.writeText(text).then(() => antdMessage.success('已复制'));
-    };
+function scrollToBottom() {
+  const el = listRef.value;
+  if (el) el.scrollTop = el.scrollHeight;
+}
 
-    const renderItem = (m: Message) =>
-      h(MessageItem, {
-        message: m,
-        onCopy,
-        onSuggestionPick: noop,
-        onRegenerate: noop,
-      });
+const noop = () => {};
+function onCopy(text: string) {
+  navigator.clipboard.writeText(text).then(() => antdMessage.success('已复制'));
+}
 
-    // 用 watch 来同步滚动（不依赖 onMounted 的副作用）
-    // 注意：scrollToBottomKey 是 computed，每次 messages.length 变化都会触发新 key
-    watch(scrollToBottomKey, () => {
-      // 等下一帧再滚（等 DOM 渲染完）
-      requestAnimationFrame(scrollToBottom);
-    });
+// 消息数量变化 → 滚到底（等下一帧 DOM 渲染完）
+watch(scrollToBottomKey, () => {
+  nextTick(scrollToBottom);
+});
 
-    return () => {
-      const it = props.item;
-      const d = props.detail;
-      const endTag = it
-        ? h(
-            Tag,
-            {
-              color: END_REASON_LABEL[it.endReason]?.color || 'default',
-              style: { marginLeft: '8px' },
-            },
-            () => END_REASON_LABEL[it.endReason]?.text || '已结束',
-          )
-        : null;
-
-      return h('section', { class: 'agent-chat' }, [
-        // 顶部 header
-        h('header', { class: 'agent-chat__head' }, [
-          h('div', { class: 'agent-chat__head-left' }, [
-            h(
-              Avatar,
-              { size: 40, class: 'agent-chat__user-avatar' },
-              { icon: () => h(UserOutlined) },
-            ),
-            h('div', null, [
-              h('div', { class: 'agent-chat__user-name' }, [
-                it?.userName || `用户 ${it?.clientId?.slice(-6) || '未知'}`,
-                endTag,
-              ]),
-              h('div', { class: 'agent-chat__user-meta' }, [
-                h(
-                  Space,
-                  { size: 12 },
-                  {
-                    default: () => [
-                      h('span', null, `共 ${d?.messages.length ?? it?.messageCount ?? 0} 条消息`),
-                      h('span', null, `会话时长：${formatDuration(duration.value)}`),
-                      it?.startedAt
-                        ? h(
-                            'span',
-                            { style: { color: '#8c8c8c' } },
-                            new Date(it.startedAt).toLocaleString('zh-CN'),
-                          )
-                        : null,
-                    ],
-                  },
-                ),
-              ]),
-            ]),
-          ]),
-          h('div', { class: 'agent-chat__head-right' }, [
-            h(Button, { onClick: () => props.onBack() }, () => '返回活跃会话'),
-          ]),
-        ]),
-
-        // 主体消息列表
-        h('div', { ref: listRef, class: 'agent-chat__body' }, [
-          props.loading && !d
-            ? h(
-                'div',
-                { class: 'agent-chat__empty' },
-                h(Empty, { description: '加载历史消息中…' }),
-              )
-            : messages.value.length === 0
-              ? h(
-                  'div',
-                  { class: 'agent-chat__empty' },
-                  h(Empty, { description: '该会话暂无消息' }),
-                )
-              : h(MessageVirtualList as any, {
-                  items: messages.value as Message[],
-                  streamingItem: null,
-                  getKey: (m: Message) => m.id,
-                  height: listHeight.value,
-                  overscan: 3,
-                  scrollToBottomKey: scrollToBottomKey.value,
-                  followStreaming: false,
-                  renderItem,
-                  renderStreaming: renderItem,
-                }),
-        ]),
-
-        // 底部提示（无输入框）
-        h('div', { class: 'agent-chat__footer' }, [
-          h(
-            'div',
-            {
-              style: {
-                padding: '16px',
-                textAlign: 'center',
-                color: '#8c8c8c',
-                background: '#fafafa',
-                borderRadius: '8px',
-                fontSize: '13px',
-              },
-            },
-            '🔒 该会话已结束（仅供查看，不能发送新消息）',
-          ),
-        ]),
-      ]);
-    };
-  },
+const endReason = computed(() => {
+  const r = props.item?.endReason;
+  return (r && END_REASON_LABEL[r]) || { color: 'default', text: '已结束' };
 });
 </script>
+
+<template>
+  <section class="agent-chat">
+    <!-- 顶部 header -->
+    <header class="agent-chat__head">
+      <div class="agent-chat__head-left">
+        <Avatar :size="40" class="agent-chat__user-avatar">
+          <template #icon><UserOutlined /></template>
+        </Avatar>
+        <div>
+          <div class="agent-chat__user-name">
+            {{ item?.userName || `用户 ${item?.clientId?.slice(-6) || '未知'}` }}
+            <Tag :color="endReason.color" style="margin-left: 8px">
+              {{ endReason.text }}
+            </Tag>
+          </div>
+          <div class="agent-chat__user-meta">
+            <Space :size="12">
+              <span>共 {{ detail?.messages.length ?? item?.messageCount ?? 0 }} 条消息</span>
+              <span>会话时长：{{ formatDuration(duration) }}</span>
+              <span v-if="item?.startedAt" style="color: #8c8c8c">
+                {{ new Date(item.startedAt).toLocaleString('zh-CN') }}
+              </span>
+            </Space>
+          </div>
+        </div>
+      </div>
+      <div class="agent-chat__head-right">
+        <Button @click="onBack()">返回活跃会话</Button>
+      </div>
+    </header>
+
+    <!-- 主体消息列表 -->
+    <div ref="listRef" class="agent-chat__body">
+      <div v-if="loading && !detail" class="agent-chat__empty">
+        <Empty description="加载历史消息中…" />
+      </div>
+      <div v-else-if="messages.length === 0" class="agent-chat__empty">
+        <Empty description="该会话暂无消息" />
+      </div>
+      <MessageVirtualList
+        v-else
+        :items="messages as Message[]"
+        :streaming-item="null"
+        :get-key="(m: Message) => m.id"
+        :height="listHeight"
+        :overscan="3"
+        :scroll-to-bottom-key="scrollToBottomKey"
+        :follow-streaming="false"
+      >
+        <template #item="{ item }">
+          <MessageItem
+            :message="item"
+            :on-copy="onCopy"
+            :on-suggestion-pick="noop"
+            :on-regenerate="noop"
+          />
+        </template>
+      </MessageVirtualList>
+    </div>
+
+    <!-- 底部提示（无输入框） -->
+    <div class="agent-chat__footer">
+      <div
+        style="
+          padding: 16px;
+          text-align: center;
+          color: #8c8c8c;
+          background: #fafafa;
+          border-radius: 8px;
+          font-size: 13px;
+        "
+      >
+        🔒 该会话已结束（仅供查看，不能发送新消息）
+      </div>
+    </div>
+  </section>
+</template>

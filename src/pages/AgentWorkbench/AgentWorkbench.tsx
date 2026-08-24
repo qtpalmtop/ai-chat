@@ -66,6 +66,7 @@ export const AgentWorkbench: React.FC = () => {
   } = useAgentWorkbench();
 
   const pendingQueue = useAgentStore((s) => s.workbench.pendingQueue);
+  const userInfoByClient = useAgentStore((s) => s.workbench.userInfoByClient);
   const historySessions = useAgentStore((s) => s.historySessions);
   const historySessionDetails = useAgentStore((s) => s.historySessionDetails);
   const loadingHistorySessionId = useAgentStore((s) => s.loadingHistorySessionId);
@@ -286,6 +287,7 @@ export const AgentWorkbench: React.FC = () => {
             selectHistorySession(null);
           }}
           activeSessions={activeSessions}
+          userInfoByClient={userInfoByClient}
           pendingQueue={pendingQueue}
           historySessions={historySessions}
           selectedHistorySessionId={selectedHistorySessionId}

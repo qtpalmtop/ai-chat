@@ -2309,3 +2309,347 @@ button {
     max-height: 200px;
   }
 }
+
+/* ============== 移动端聊天窗口优化 ==============
+ * 目标：让聊天区（main__body）占满视口最大空间
+ * 关键策略：
+ *  1. layout 改 column：sidebar 沉到底部可横向滚动条（mac dock 风格），main 占满上方
+ *  2. main__header 高度 56→44px，padding 收紧
+ *  3. SkillBar 高度 50→40px，padding 10→6px，可横向滚动
+ *  4. main__body padding 16→10，消息气泡紧凑化
+ *  5. 客服结束态卡片单行紧凑化（去掉多行 sub）
+ *  6. agent-workbench 同样优化：三栏 → 单栏
+ */
+@media (max-width: 768px) {
+  /* === 整体布局：sidebar 折叠为底部横栏，main 占满 === */
+  .layout {
+    flex-direction: column;
+    height: 100dvh; /* dvh 优先，避开移动端地址栏 */
+  }
+  .main {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+  }
+  /* === Sidebar 折叠为底部横栏（mac dock 风格） === */
+  .sidebar {
+    width: 100%;
+    height: 56px;
+    max-height: 56px;
+    flex-direction: row;
+    flex-shrink: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    background: linear-gradient(180deg, #7b5cff 0%, #4d6bfe 100%);
+    overflow: hidden;
+    order: 2;
+  }
+  .sidebar__brand {
+    display: none; /* 顶部已经有 main__title，底部 dock 不再重复 logo */
+  }
+  .sidebar__new {
+    display: none; /* 移动端用 main__header 的 + 按钮 */
+  }
+  .sidebar__list {
+    flex: 1;
+    padding: 0 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+  .sidebar__list::-webkit-scrollbar {
+    height: 0;
+  }
+  .sidebar__empty {
+    display: none;
+  }
+  .sidebar__item {
+    height: 36px;
+    min-width: 100px;
+    max-width: 200px;
+    flex-shrink: 0;
+    padding: 0 12px;
+    margin-bottom: 0;
+    color: rgba(255, 255, 255, 0.95);
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+  }
+  .sidebar__item.is-active {
+    background: rgba(255, 255, 255, 0.28);
+  }
+  .sidebar__item-icon {
+    display: inline-block;
+  }
+  .sidebar__item-title {
+    font-size: 13px;
+  }
+  .sidebar__item-actions {
+    display: none; /* 移动端长按触发，避免误触 */
+  }
+  .sidebar__footer {
+    display: none;
+  }
+
+  /* === Main header 紧凑化 === */
+  .main__header {
+    height: 44px;
+    padding: 0 12px;
+    flex-shrink: 0;
+  }
+  .main__title {
+    font-size: 15px;
+  }
+
+  /* === SkillBar 紧凑化 === */
+  .skill-bar {
+    height: 40px;
+    padding: 4px 10px;
+    flex-shrink: 0;
+    background: #fafbfc;
+  }
+  .skill-bar__item {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
+  /* === Main body 紧凑化 + 消息气泡紧凑化 === */
+  .main__body {
+    padding: 0;
+  }
+  .main__inner {
+    padding: 16px 12px;
+  }
+  .msg {
+    padding: 6px 12px;
+    gap: 8px;
+  }
+  .msg__avatar {
+    width: 30px;
+    height: 30px;
+  }
+  .msg__bubble {
+    padding: 9px 12px;
+    font-size: 14px;
+    line-height: 1.55;
+    border-radius: 10px;
+  }
+  .welcome__hero h1 {
+    font-size: 26px;
+  }
+  .welcome__hero p {
+    font-size: 14px;
+    margin-bottom: 20px;
+  }
+  .welcome__logo {
+    width: 56px;
+    height: 56px;
+    font-size: 28px;
+  }
+  .welcome__chip {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+
+  /* === Main footer (InputPanel) 紧凑化 === */
+  .main__footer {
+    padding: 8px 10px 10px;
+    background: #fff;
+  }
+  .input-panel {
+    padding: 6px 10px;
+    border-radius: 10px;
+  }
+  .input-panel__textarea {
+    font-size: 15px; /* 16px 以下避免 iOS 自动放大 */
+  }
+  .input-panel__toolbar {
+    padding-bottom: 2px;
+  }
+  /* 注：Vue 版 InputPanel 没有"客服结束态"分支，无需 .input-panel--ended / .agent-ended-hint 样式 */
+
+  /* === 客户模式特殊：让 main 占满更大空间 === */
+  /* 移动端减掉 sidebar 56px */
+  .main {
+    height: calc(100dvh - 56px);
+  }
+
+  /* === 客服工作台（agent-workbench）移动端：隐藏推荐工具栏 === */
+  .agent-workbench {
+    height: 100dvh;
+  }
+  .agent-workbench__topbar {
+    padding: 8px 12px;
+    height: 44px;
+    flex-shrink: 0;
+  }
+  .agent-workbench__layout {
+    padding: 8px;
+    gap: 8px;
+  }
+  .agent-tools {
+    display: none; /* 移动端隐藏右侧推荐话术面板，让聊天区占更多 */
+  }
+  .agent-chat__head {
+    padding: 8px 12px;
+  }
+  .agent-chat__head-left {
+    gap: 8px;
+  }
+  .agent-chat__user-avatar.ant-avatar {
+    width: 32px !important;
+    height: 32px !important;
+    line-height: 32px !important;
+  }
+  .agent-chat__body {
+    padding: 12px 10px 8px;
+  }
+  .agent-chat__footer {
+    padding: 8px 10px 10px;
+  }
+  .agent-input {
+    padding: 8px 10px;
+  }
+  .agent-input__textarea {
+    min-height: 48px;
+    max-height: 140px;
+    font-size: 15px;
+  }
+
+  /* === 移动端：键盘弹起 + 用户向上滚 = 不挤压聊天区 ===
+   * 触发条件：.layout--keyboard-keep（由 ChatWindow.vue 的 keepChatOnKeyboard 计算）
+   *
+   * 默认行为下 iOS Safari 弹键盘会触发 input 滚到视口内，
+   * 表现就是 main__body 高度被压缩、用户当前看的位置被推上去。
+   * 用户向上滚的目的就是看历史消息，应该让键盘直接覆盖在 input 上方，
+   * 不动 main__body 的 scrollTop、也不缩 main 高度。
+   *
+   * 实现：layout 高度从 100dvh（动态视口，含键盘收缩）切到 100lvh（large 视口，忽略键盘）。
+   * dvh 让 main 跟着 visualViewport 收缩（用户想要时的"正常"行为）；
+   * lvh 让 main 保持原视口高度（向上滚时的"被覆盖"行为）。
+   */
+  .layout--keyboard-keep {
+    height: 100lvh !important;
+  }
+  .layout--keyboard-keep .main {
+    height: calc(100lvh - 56px) !important;
+  }
+  .layout--keyboard-keep .main__body {
+    /* 关键：禁止 main__body 在键盘弹起时被压扁。
+     * flex:1 在 layout 高度不变的情况下不会重新计算 main__body，
+     * 但 iOS 自动滚动行为仍会调整 main__body 的 scrollTop。
+     * 这里加 overflow-anchor:none 禁用 scroll anchoring——iOS 会试图保持
+     * 正在查看的内容位置不变而把 input 滚到视口里，这个行为要禁用。 */
+    overflow-anchor: none;
+  }
+}
+
+/* ============== 客服会话状态分支样式 ==============
+ * 与 React 端 src/index.css 中 .agent-queue / .agent-banner / .agent-ended-hint
+ * 视觉对齐——Vue 版 InputPanel 现在有 queued/inSession/ended 三种状态分支。
+ */
+
+/* 排队中卡片 */
+.agent-queue {
+  text-align: center;
+  padding: 32px 20px 20px;
+  background: linear-gradient(180deg, #f7f8ff 0%, #ffffff 100%);
+  border-radius: 12px;
+  margin: 0 0 12px;
+}
+.agent-queue__icon {
+  font-size: 36px;
+  color: #4d6bfe;
+  margin-bottom: 12px;
+}
+.agent-queue__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1d2129;
+  margin-bottom: 8px;
+}
+.agent-queue__sub {
+  font-size: 13px;
+  color: #4e5969;
+  margin-bottom: 6px;
+}
+.agent-queue__sub b { color: #1d2129; }
+.agent-queue__tip {
+  font-size: 12px;
+  color: #8c8c8c;
+  margin-bottom: 16px;
+}
+.agent-queue__cancel {
+  min-width: 120px;
+}
+
+/* 客服对话中 banner */
+.agent-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: linear-gradient(90deg, #e8efff 0%, #f0f4ff 100%);
+  border: 1px solid #d6e0ff;
+  border-radius: 10px;
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+.agent-banner__icon {
+  color: #4d6bfe;
+  font-size: 16px;
+}
+.agent-banner__label {
+  font-weight: 600;
+  color: #1d2129;
+}
+.agent-banner__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #4e5969;
+}
+.agent-banner__verified {
+  color: #52c41a;
+  font-size: 12px;
+}
+
+/* 客服输入区整体 padding（在 idle 输入区上覆盖） */
+.input-panel--agent {
+  padding: 14px 20px 12px;
+}
+
+/* 轻量已结束提示（不可发消息） */
+.input-panel--ended {
+  padding: 14px 20px;
+  background: #f7f8fa;
+}
+.agent-ended-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: #6b7280;
+}
+.agent-ended-hint__sub {
+  color: #8c8c8c;
+  font-size: 12px;
+}
+
+/* 转人工按钮（idle 状态底栏） */
+.input-panel__transfer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 顶部 title 副标题（客服名） */
+.main__title-sub {
+  margin-left: 8px;
+  font-size: 13px;
+  color: #4e5969;
+  font-weight: 400;
+}

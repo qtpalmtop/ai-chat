@@ -2,14 +2,8 @@
  * 客服工作台 - 右侧智能推荐工具栏（Vue 版 - 对齐 React 端 SuggestionPanel.tsx）
  */
 
-<script lang="ts">
-import {
-  defineComponent,
-  h,
-  ref,
-  computed,
-  type PropType,
-} from 'vue';
+<script setup lang="ts">
+import { computed, ref } from 'vue';
 import {
   App,
   Button,
@@ -33,13 +27,14 @@ import {
   MessageOutlined,
   CopyOutlined,
 } from '@ant-design/icons-vue';
+import type { Component } from 'vue';
 import type { MessagePart } from '@/types/message';
 import type { AgentSuggestion } from '@/types/agent';
 import { getClientFallbackSuggestions } from '@/utils/agentSuggestions';
 
 type PartKind = 'text' | 'image' | 'file' | 'card' | 'rich';
 
-const PART_ICON: Record<PartKind, any> = {
+const PART_ICON: Record<PartKind, Component> = {
   text: MessageOutlined,
   image: PictureOutlined,
   file: FileTextOutlined,
@@ -124,271 +119,247 @@ function buildPartSummary(parts: MessagePart[]): Array<{ kind: PartKind; label: 
   return out;
 }
 
-const SuggestionCardItem = defineComponent({
-  name: 'SuggestionCardItem',
-  props: {
-    suggestion: { type: Object as PropType<AgentSuggestion>, required: true },
-    onUse: { type: Function as PropType<(s: AgentSuggestion) => void>, required: true },
-    onCopy: { type: Function as PropType<(s: AgentSuggestion) => void>, required: true },
-  },
-  setup(props) {
-    return () => {
-      const summary = buildPartSummary(props.suggestion.parts);
-      const isApplied = !!props.suggestion.applied;
-      return h(
-        'div',
-        { class: `agent-suggestion ${isApplied ? 'is-applied' : ''}` },
-        [
-          h('div', { class: 'agent-suggestion__head' }, [
-            h(Space, { size: 6 }, () => [
-              h(ThunderboltOutlined, { style: { color: '#4d6bfe' } }),
-              h('span', { class: 'agent-suggestion__cat' }, props.suggestion.category),
-              props.suggestion.confidence !== undefined
-                ? h(
-                    Tag,
-                    { color: 'blue' },
-                    () => `${Math.round(props.suggestion.confidence! * 100)}%`,
-                  )
-                : null,
-            ]),
-            isApplied
-              ? h(
-                  Tag,
-                  { color: 'success', icon: CheckCircleFilled },
-                  () => '已发送',
-                )
-              : null,
-          ]),
-          h('div', { class: 'agent-suggestion__reason' }, props.suggestion.reason),
-          h(
-            'div',
-            { class: 'agent-suggestion__parts' },
-            summary.map((s, i) =>
-              h(
-                Tooltip,
-                { key: i, title: s.preview, placement: 'top', mouseEnterDelay: 0.3 },
-                {
-                  default: () =>
-                    h(
-                      'span',
-                      {
-                        class: 'agent-suggestion__part-chip',
-                        style: {
-                          color: PART_COLOR[s.kind],
-                          borderColor: PART_COLOR[s.kind] + '40',
-                          background: PART_COLOR[s.kind] + '10',
-                        },
-                      },
-                      [
-                        h(PART_ICON[s.kind]),
-                        h('span', { class: 'agent-suggestion__part-label' }, s.label),
-                      ],
-                    ),
-                },
-              ),
-            ),
-          ),
-          h(
-            'div',
-            { class: 'agent-suggestion__preview', title: props.suggestion.preview },
-            props.suggestion.preview,
-          ),
-          h('div', { class: 'agent-suggestion__actions' }, [
-            h(
-              Button,
-              {
-                type: 'primary',
-                size: 'small',
-                icon: SendOutlined,
-                disabled: isApplied,
-                onClick: () => props.onUse(props.suggestion),
-                class: 'agent-suggestion__send',
-              },
-              () => (isApplied ? '已发送' : '一键发送'),
-            ),
-            h(
-              Tooltip,
-              { title: '复制话术到剪贴板（在输入框手动粘贴）' },
-              {
-                default: () =>
-                  h(
-                    Button,
-                    {
-                      size: 'small',
-                      icon: CopyOutlined,
-                      onClick: () => props.onCopy(props.suggestion),
-                      class: 'agent-suggestion__copy',
-                    },
-                    () => '复制',
-                  ),
-              },
-            ),
-          ]),
-        ],
-      );
-    };
-  },
-});
+const props = defineProps<{
+  sessionId: string;
+  messages: Array<{ id: string; role: 'user' | 'agent' | 'assistant'; parts: MessagePart[] }>;
+  isStreaming: boolean;
+  streamingCategory?: string | null;
+  onRefresh: () => void;
+  onUseSuggestion: (s: AgentSuggestion) => void;
+  autoTrigger: boolean;
+  onAutoTriggerChange: (v: boolean | string | number) => void;
+}>();
 
-export default defineComponent({
-  name: 'SuggestionPanel',
-  props: {
-    sessionId: { type: String, required: true },
-    messages: {
-      type: Array as PropType<
-        Array<{ id: string; role: 'user' | 'agent' | 'assistant'; parts: MessagePart[] }>
-      >,
-      required: true,
-    },
-    isStreaming: { type: Boolean, required: true },
-    streamingCategory: { type: String as PropType<string | null>, default: null },
-    onRefresh: { type: Function as PropType<() => void>, required: true },
-    onUseSuggestion: {
-      type: Function as PropType<(s: AgentSuggestion) => void>,
-      required: true,
-    },
-    autoTrigger: { type: Boolean, required: true },
-    onAutoTriggerChange: { type: Function as PropType<(v: boolean) => void>, required: true },
-  },
-  setup(props) {
-    const { message: antdMessage } = App.useApp();
+const { message: antdMessage } = App.useApp();
 
-    // 简化版：组件内本地 list（实际项目可放到 store）
-    const list = ref<AgentSuggestion[]>([]);
+// 简化版：组件内本地 list（实际项目可放到 store）
+const list = ref<AgentSuggestion[]>([]);
 
-    function onUse(s: AgentSuggestion) {
-      if (s.applied) return;
-      props.onUseSuggestion(s);
-      antdMessage.success('已发送推荐话术');
-    }
+function onUse(s: AgentSuggestion) {
+  if (s.applied) return;
+  props.onUseSuggestion(s);
+  antdMessage.success('已发送推荐话术');
+}
 
-    /**
-     * 一键复制话术到剪贴板（不直接发送）。客服可在输入框 Ctrl/Cmd+V 粘贴后微调。
-     * 仅复制 text/markdown 两种 part，富文本/卡片/图片用「一键发送」。
-     */
-    async function onCopy(s: AgentSuggestion) {
-      const text = s.parts
-        .map((p) => (p.type === 'text' || p.type === 'markdown' ? p.content : ''))
-        .filter(Boolean)
-        .join('\n\n');
-      if (!text) {
-        antdMessage.warning('该话术含富文本/卡片，建议直接「一键发送」');
-        return;
-      }
-      try {
-        await navigator.clipboard.writeText(text);
-        antdMessage.success('已复制，去输入框粘贴吧');
-      } catch {
-        antdMessage.error('复制失败，请检查浏览器剪贴板权限');
-      }
-    }
+/**
+ * 一键复制话术到剪贴板（不直接发送）。客服可在输入框 Ctrl/Cmd+V 粘贴后微调。
+ * 仅复制 text/markdown 两种 part，富文本/卡片/图片用「一键发送」。
+ */
+async function onCopy(s: AgentSuggestion) {
+  const text = s.parts
+    .map((p) => (p.type === 'text' || p.type === 'markdown' ? p.content : ''))
+    .filter(Boolean)
+    .join('\n\n');
+  if (!text) {
+    antdMessage.warning('该话术含富文本/卡片，建议直接「一键发送」');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    antdMessage.success('已复制，去输入框粘贴吧');
+  } catch {
+    antdMessage.error('复制失败，请检查浏览器剪贴板权限');
+  }
+}
 
-    const fallback = computed(() =>
-      getClientFallbackSuggestions(props.messages as any),
-    );
+const fallback = computed(() =>
+  getClientFallbackSuggestions(props.messages as any),
+);
 
-    const fallbackOpen = ref(true);
-
-    return () =>
-      h('aside', { class: 'agent-tools' }, [
-        h('header', { class: 'agent-tools__head' }, [
-          h('div', { class: 'agent-tools__title' }, [
-            h(ThunderboltOutlined),
-            ' 智能推荐',
-          ]),
-          h('div', { class: 'agent-tools__sub' }, '基于最近用户消息实时识别意图'),
-        ]),
-
-        h('div', { class: 'agent-tools__actions' }, [
-          h(Space, null, () => [
-            h(Switch, {
-              size: 'small',
-              checked: props.autoTrigger,
-              onChange: props.onAutoTriggerChange,
-              checkedChildren: '自动',
-              unCheckedChildren: '手动',
-            }),
-            h('span', { style: { fontSize: '12px', color: '#8c8c8c' } }, '新消息时自动推荐'),
-          ]),
-          h(
-            Tooltip,
-            { title: '立即请求一次推荐' },
-            {
-              default: () =>
-                h(
-                  Button,
-                  {
-                    size: 'small',
-                    type: 'text',
-                    onClick: props.onRefresh,
-                    disabled: props.isStreaming,
-                  },
-                  { icon: () => h(ReloadOutlined, { spin: props.isStreaming }) },
-                  () => '刷新',
-                ),
-            },
-          ),
-        ]),
-
-        h('div', { class: 'agent-tools__body' }, [
-          props.isStreaming
-            ? h('div', { class: 'agent-tools__loading' }, [
-                h(Space, null, () => [
-                  h(LoadingOutlined),
-                  h(
-                    'span',
-                    null,
-                    `正在识别意图${props.streamingCategory ? `（${props.streamingCategory}）` : ''}…`,
-                  ),
-                ]),
-                h(Skeleton, { active: true, paragraph: { rows: 2 }, title: false, style: { marginTop: '8px' } }),
-              ])
-            : null,
-
-          list.value.length === 0 && !props.isStreaming
-            ? h(Empty, {
-                image: Empty.PRESENTED_IMAGE_SIMPLE,
-                description: h('span', { style: { color: '#8c8c8c', fontSize: '13px' } }, [
-                  '暂无推荐，等待用户消息…',
-                  h('div', { style: { fontSize: '12px', marginTop: '4px' } }, '也可点"刷新"手动触发'),
-                ]),
-                style: { marginTop: '24px' },
-              })
-            : list.value.map((s) =>
-                h(SuggestionCardItem, { key: s.id, suggestion: s, onUse, onCopy }),
-              ),
-
-          fallback.value.length > 0 && list.value.length === 0 && !props.isStreaming
-            ? h('div', { class: 'agent-tools__fallback' }, [
-                h(
-                  'div',
-                  {
-                    class: 'agent-tools__fallback-head',
-                    onClick: () => (fallbackOpen.value = !fallbackOpen.value),
-                  },
-                  `${fallbackOpen.value ? '▼' : '▶'} 本地模板（${fallback.value[0].category}）`,
-                ),
-                fallbackOpen.value
-                  ? h(
-                      'div',
-                      { class: 'agent-tools__fallback-list' },
-                      fallback.value[0].templates.map((tpl, i) => {
-                        const fakeS: AgentSuggestion = {
-                          id: `fallback_${i}`,
-                          category: fallback.value[0].category,
-                          reason: '本地模板（离线兜底）',
-                          preview: tpl.preview,
-                          parts: tpl.parts,
-                          createdAt: Date.now(),
-                        };
-                        return h(SuggestionCardItem, { key: i, suggestion: fakeS, onUse, onCopy });
-                      }),
-                    )
-                  : null,
-              ])
-            : null,
-        ]),
-      ]);
-  },
-});
+const fallbackOpen = ref(true);
 </script>
+
+<template>
+  <aside class="agent-tools">
+    <header class="agent-tools__head">
+      <div class="agent-tools__title">
+        <ThunderboltOutlined /> 智能推荐
+      </div>
+      <div class="agent-tools__sub">基于最近用户消息实时识别意图</div>
+    </header>
+
+    <div class="agent-tools__actions">
+      <Space>
+        <Switch
+          size="small"
+          :checked="autoTrigger"
+          @change="onAutoTriggerChange"
+          checked-children="自动"
+          un-checked-children="手动"
+        />
+        <span style="font-size: 12px; color: #8c8c8c">新消息时自动推荐</span>
+      </Space>
+      <Tooltip title="立即请求一次推荐">
+        <Button
+          size="small"
+          type="text"
+          :disabled="isStreaming"
+          @click="onRefresh"
+        >
+          <template #icon>
+            <ReloadOutlined :spin="isStreaming" />
+          </template>
+          刷新
+        </Button>
+      </Tooltip>
+    </div>
+
+    <div class="agent-tools__body">
+      <div v-if="isStreaming" class="agent-tools__loading">
+        <Space>
+          <LoadingOutlined />
+          <span>正在识别意图{{ streamingCategory ? `（${streamingCategory}）` : '' }}…</span>
+        </Space>
+        <Skeleton
+          active
+          :paragraph="{ rows: 2 }"
+          :title="false"
+          style="margin-top: 8px"
+        />
+      </div>
+
+      <Empty
+        v-if="list.length === 0 && !isStreaming"
+        :image="Empty.PRESENTED_IMAGE_SIMPLE"
+        style="margin-top: 24px"
+      >
+        <template #description>
+          <span style="color: #8c8c8c; font-size: 13px">
+            暂无推荐，等待用户消息…
+            <div style="font-size: 12px; margin-top: 4px">也可点"刷新"手动触发</div>
+          </span>
+        </template>
+      </Empty>
+
+      <template v-if="list.length > 0">
+        <div
+          v-for="s in list"
+          :key="s.id"
+          :class="['agent-suggestion', { 'is-applied': !!s.applied }]"
+        >
+          <div class="agent-suggestion__head">
+            <Space :size="6">
+              <ThunderboltOutlined style="color: #4d6bfe" />
+              <span class="agent-suggestion__cat">{{ s.category }}</span>
+              <Tag v-if="s.confidence !== undefined" color="blue">
+                {{ Math.round((s.confidence ?? 0) * 100) }}%
+              </Tag>
+            </Space>
+            <Tag v-if="s.applied" color="success">
+              <template #icon><CheckCircleFilled /></template>
+              已发送
+            </Tag>
+          </div>
+          <div class="agent-suggestion__reason">{{ s.reason }}</div>
+          <div class="agent-suggestion__parts">
+            <Tooltip
+              v-for="(part, i) in buildPartSummary(s.parts)"
+              :key="i"
+              :title="part.preview"
+              placement="top"
+              :mouse-enter-delay="0.3"
+            >
+              <span
+                class="agent-suggestion__part-chip"
+                :style="{
+                  color: PART_COLOR[part.kind],
+                  borderColor: PART_COLOR[part.kind] + '40',
+                  background: PART_COLOR[part.kind] + '10',
+                }"
+              >
+                <component :is="PART_ICON[part.kind]" />
+                <span class="agent-suggestion__part-label">{{ part.label }}</span>
+              </span>
+            </Tooltip>
+          </div>
+          <div class="agent-suggestion__preview" :title="s.preview">{{ s.preview }}</div>
+          <div class="agent-suggestion__actions">
+            <Button
+              type="primary"
+              size="small"
+              :disabled="!!s.applied"
+              class="agent-suggestion__send"
+              @click="onUse(s)"
+            >
+              <!--
+                ant-design-vue@7 图标是函数式组件，必须用 #icon slot 语法
+                否则函数体会被直接渲染到页面上（出现 "function SendOutlined3(props, context) { va..."）
+              -->
+              <template #icon><SendOutlined /></template>
+              {{ s.applied ? '已发送' : '一键发送' }}
+            </Button>
+            <Tooltip title="复制话术到剪贴板（在输入框手动粘贴）">
+              <Button size="small" class="agent-suggestion__copy" @click="onCopy(s)">
+                <template #icon><CopyOutlined /></template>
+                复制
+              </Button>
+            </Tooltip>
+          </div>
+        </div>
+      </template>
+
+      <div
+        v-if="fallback.length > 0 && list.length === 0 && !isStreaming"
+        class="agent-tools__fallback"
+      >
+        <div
+          class="agent-tools__fallback-head"
+          @click="fallbackOpen = !fallbackOpen"
+        >
+          {{ fallbackOpen ? '▼' : '▶' }} 本地模板（{{ fallback[0].category }}）
+        </div>
+        <div v-if="fallbackOpen" class="agent-tools__fallback-list">
+          <div
+            v-for="(tpl, i) in fallback[0].templates"
+            :key="i"
+            :class="['agent-suggestion', { 'is-applied': false }]"
+          >
+            <div class="agent-suggestion__head">
+              <Space :size="6">
+                <ThunderboltOutlined style="color: #4d6bfe" />
+                <span class="agent-suggestion__cat">{{ fallback[0].category }}</span>
+              </Space>
+            </div>
+            <div class="agent-suggestion__reason">本地模板（离线兜底）</div>
+            <div class="agent-suggestion__preview" :title="tpl.preview">{{ tpl.preview }}</div>
+            <div class="agent-suggestion__actions">
+              <Button
+                type="primary"
+                size="small"
+                class="agent-suggestion__send"
+                @click="onUse({
+                  id: `fallback_${i}`,
+                  category: fallback[0].category,
+                  reason: '本地模板（离线兜底）',
+                  preview: tpl.preview,
+                  parts: tpl.parts,
+                  createdAt: Date.now(),
+                })"
+              >
+                <template #icon><SendOutlined /></template>
+                一键发送
+              </Button>
+              <Tooltip title="复制话术到剪贴板（在输入框手动粘贴）">
+                <Button
+                  size="small"
+                  class="agent-suggestion__copy"
+                  @click="onCopy({
+                    id: `fallback_${i}`,
+                    category: fallback[0].category,
+                    reason: '本地模板（离线兜底）',
+                    preview: tpl.preview,
+                    parts: tpl.parts,
+                    createdAt: Date.now(),
+                  })"
+                >
+                  <template #icon><CopyOutlined /></template>
+                  复制
+                </Button>
+              </Tooltip>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</template>

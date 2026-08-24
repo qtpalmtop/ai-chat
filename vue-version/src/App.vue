@@ -25,6 +25,7 @@ import { ref, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
 import { ConfigProvider, App as AntdApp } from 'ant-design-vue';
 import ChatWindow from '@/components/ChatWindow/ChatWindow.vue';
 import ClientOnly from '@/components/ClientOnly/ClientOnly.vue';
+import RotateHint from '@/components/RotateHint/RotateHint.vue';
 
 // module 顶层：稳定引用；只传 token，不传 algorithm 字段（原因见上方注释）
 const themeConfig = {
@@ -62,6 +63,12 @@ onUnmounted(() => {
           <ChatWindow v-else />
         </AntdApp>
       </ConfigProvider>
+      <!--
+        横屏旋转提示：放在 ClientOnly 之外，确保 hydrate 时立刻可用；
+        组件内部已经判过移动端 + 横屏条件，桌面端不会触发。
+        不放在 ChatWindow/AgentWorkbench 里——跨路由持续生效。
+      -->
+      <RotateHint />
       <template #placeholder>
         <div class="app-skeleton">豆包 AI 加载中…</div>
       </template>

@@ -159,6 +159,9 @@ button {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* min-height: 0 让 .main 在父级 .layout (height: 100vh) 中严格按 flex: 1 分配高度，
+     否则 min-height: auto 会按内容自然高度撑开，移动端尤其容易撑爆 100vh 出现"页面可以整体下拉"的问题。 */
+  min-height: 0;
   position: relative;
 }
 .main__header {
@@ -179,6 +182,11 @@ button {
 }
 .main__body {
   flex: 1;
+  /* min-height: 0 是 flex 子项的"高度塌缩兜底"：
+     flex item 默认 min-height: auto，会按内容自然高度撑开，导致 flex: 1 失效，
+     父级 100vh 时 .main__body 可能拿到比预期大很多的高度（或 0），子级滚动容器拿不到确定高度。
+     显式 min-height: 0 让 flex: 1 严格按可用空间分配，滚动容器才能正确触发 overflow: auto。 */
+  min-height: 0;
   overflow: hidden; /* 由内部 MessageVirtualList 自己滚动，main__body 不再产生双滚动条 */
   padding: 0;
   scroll-behavior: smooth;

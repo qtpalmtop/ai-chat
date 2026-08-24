@@ -1,124 +1,149 @@
 /**
- * 客服工作台 - WebSocket 封装（Vue 版 - 对齐 React 端）
+ * 客服工作台 - WebSocket 封装（Vue 版 - NestJS + socket.io）
  *
- * 与 React 版的差异：
- *   - 用 ref 持有 ws 实例（在 setup 中创建，组件卸载时关闭）
- *   - 不暴露 setState，而是通过 emit('event', payload) 回调
- *
- * 服务端下行协议：{ seq, ts, payload: SystemEvent }（envelope 包裹）
- * 这里负责解包 + seq 去重，然后透传给 store.handleSystemEvent
+ * 与 React 端保持协议一致：
+ *   - 上行：socket.emit('message', { type, ... })
+ *   - 下行：socket.on('<event.type>', event => ...)
+ *   - 自动重连：socket.io 内置
  */
 
-import { onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
+import { io, Socket } from 'socket.io-client';
 import { useAgentStore } from '@/stores/agentStore';
-import type { AgentMode, ClientToServer, ServerEnvelope, SystemEvent } from '@/types/agent';
-
-const DEFAULT_WS_URL = 'ws://localhost:3002/ws';
+import type { AgentMode, ClientToServer, SystemEvent } from '@/types/agent';
 
 interface UseAgentSocketOptions {
   url?: string;
   mode: AgentMode;
-  onEvent?: (event: SystemEvent, envelope: ServerEnvelope) => void;
+  onEvent?: (event: SystemEvent) => void;
 }
+
+function defaultUrl() {
+  if (typeof window === 'undefined') return '';
+  const host = window.location.hostname || 'localhost';
+  return `http://${host}:3001`;
+}
+
+const EVENT_TYPES = [
+  'queue_accepted',
+  'queue_position',
+  'queue_assigned',
+  'queue_cancelled',
+  'queue_timeout',
+  'message',
+  'message_ack',
+  'typing',
+  'session_ended',
+  'session_restored',
+  'presence',
+  'history_list',
+  'history_session',
+  'queue_update',
+  'suggestion_start',
+  'suggestion_chunk',
+  'error',
+];
 
 export function useAgentSocket(options: UseAgentSocketOptions) {
   const store = useAgentStore();
-  const ws = ref<WebSocket | null>(null);
-  const reconnectTimer = ref<number | null>(null);
-  const pingTimer = ref<number | null>(null);
-  /** 服务端序号去重：防止重连后重复推送 */
-  const lastSeq = ref(0);
+  const sock = ref<Socket | null>(null);
+  const reconnectAttempts = ref(0);
+  const isOpen = computed(() => store.connection === 'open');
+  let manuallyClosed = false;
 
-  function clearTimers() {
-    if (reconnectTimer.value) {
-      clearTimeout(reconnectTimer.value);
-      reconnectTimer.value = null;
-    }
-    if (pingTimer.value) {
-      clearInterval(pingTimer.value);
-      pingTimer.value = null;
+  function clearSocket() {
+    if (sock.value) {
+      try {
+        sock.value.removeAllListeners();
+        sock.value.disconnect();
+      } catch {
+        /* noop */
+      }
+      sock.value = null;
     }
   }
 
   function send(payload: ClientToServer) {
-    const sock = ws.value;
-    if (!sock || sock.readyState !== WebSocket.OPEN) return false;
-    sock.send(JSON.stringify(payload));
+    const s = sock.value;
+    if (!s || !s.connected) return false;
+    s.emit('message', payload);
     return true;
   }
 
   function connect() {
     if (typeof window === 'undefined') return;
-    clearTimers();
+    clearSocket();
+    manuallyClosed = false;
     store.setConnection('connecting');
     store.setMode(options.mode);
 
-    let url = options.url || DEFAULT_WS_URL;
+    const url = options.url || defaultUrl();
+    const query: Record<string, string> = { role: options.mode };
     if (options.mode === 'client') {
-      // 服务端按 userId 解析（见 server/agent-ws.js:85）
-      url += `?userId=${encodeURIComponent(store.clientId)}&role=client`;
+      query.id = store.clientId;
     } else {
-      url += `?agentId=${encodeURIComponent(store.agentId)}&role=agent`;
+      query.id = store.agentId;
     }
 
-    const sock = new WebSocket(url);
-    ws.value = sock;
+    const s = io(url, {
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
+      query,
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 30000,
+    });
+    sock.value = s;
 
-    sock.onopen = () => {
+    s.on('connect', () => {
+      reconnectAttempts.value = 0;
       store.setConnection('open');
       // 身份握手
+      // 注意：client.hello 同时携带 clientId 和 userId（React 端约定），服务端按 userId 做反向路由
       if (options.mode === 'client') {
-        send({ type: 'client.hello', clientId: store.clientId, userName: store.userName });
+        send({
+          type: 'client.hello',
+          clientId: store.clientId,
+          userId: store.clientId,
+          userName: store.userName,
+        });
       } else {
         send({ type: 'agent.hello', agentId: store.agentId, agentName: store.agentName });
       }
-      // 心跳
-      pingTimer.value = window.setInterval(() => send({ type: 'ping' }), 25000);
-    };
+    });
 
-    sock.onmessage = (e) => {
-      try {
-        const env = JSON.parse(e.data) as ServerEnvelope;
-        // 序号去重（与服务端 seq 单调递增对齐）
-        if (typeof env.seq === 'number') {
-          if (env.seq <= lastSeq.value) return;
-          lastSeq.value = env.seq;
-        }
-        // 解包 envelope：业务事件在 env.payload
-        const event = env.payload;
-        if (event && event.type) {
-          store.handleSystemEvent(event);
-          options.onEvent?.(event, env);
-        }
-      } catch (err) {
-        console.error('[agent-ws] parse error', err);
+    s.on('disconnect', () => {
+      if (manuallyClosed) {
+        store.setConnection('closed');
+        return;
       }
-    };
+      store.setConnection('reconnecting');
+    });
 
-    sock.onerror = () => {
-      // 错误由 onclose 统一处理
-    };
+    s.on('connect_error', () => {
+      store.setConnection('error');
+    });
 
-    sock.onclose = () => {
-      clearTimers();
-      store.setConnection('closed');
-      // 5s 后自动重连
-      reconnectTimer.value = window.setTimeout(() => {
-        if (store.connection === 'closed') {
-          store.setConnection('reconnecting');
-          connect();
+    // 业务事件统一注册
+    for (const t of EVENT_TYPES) {
+      s.on(t, (event: unknown) => {
+        if (event && typeof event === 'object') {
+          const e = event as { type?: string; payload?: SystemEvent };
+          if (e.type) {
+            store.handleSystemEvent(e as SystemEvent);
+            options.onEvent?.(e as SystemEvent);
+          } else if (e.payload && e.payload.type) {
+            store.handleSystemEvent(e.payload);
+            options.onEvent?.(e.payload);
+          }
         }
-      }, 5000);
-    };
+      });
+    }
   }
 
   function disconnect() {
-    clearTimers();
-    if (ws.value) {
-      ws.value.onclose = null;
-      ws.value.close();
-      ws.value = null;
-    }
+    manuallyClosed = true;
+    clearSocket();
     store.setConnection('closed');
   }
 
@@ -130,5 +155,7 @@ export function useAgentSocket(options: UseAgentSocketOptions) {
     connect,
     disconnect,
     send,
+    isOpen,
+    status: computed(() => store.connection),
   };
 }

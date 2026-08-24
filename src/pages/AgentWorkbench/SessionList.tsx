@@ -34,6 +34,11 @@ export interface SessionListProps {
   onSelectSession: (sessionId: string) => void;
   /** 已接单的活跃会话（key = sessionId） */
   activeSessions: Record<string, AgentSession>;
+  /**
+   * 用户信息缓存（key = clientId）。在 queue_assigned 时已写入 userName / userAvatar，
+   * 这里用于把"用户 xxxx/?"替换为真实用户名/头像。
+   */
+  userInfoByClient: Record<string, { userName?: string; userAvatar?: string }>;
   /** 等待接单的队列 */
   pendingQueue: Array<{
     clientId: string;
@@ -103,6 +108,7 @@ export const SessionList: React.FC<SessionListProps> = ({
   onAcceptQueue,
   onSelectSession,
   activeSessions,
+  userInfoByClient,
   pendingQueue,
   historySessions,
   selectedHistorySessionId,
@@ -220,6 +226,11 @@ export const SessionList: React.FC<SessionListProps> = ({
                     .slice(0, 40)
                 : '（暂无消息）';
               const isActive = sess.sessionId === activeSessionId;
+              // 优先从 userInfoByClient 缓存读 userName（queue_assigned 写入），
+              // 没有则降级到 clientId 截取——避免显示"用户 ?/未知"
+              const cached = sess.clientId ? userInfoByClient[sess.clientId] : undefined;
+              const displayName = cached?.userName || `用户 ${sess.clientId?.slice(-4) || '?'}`;
+              const displayAvatar = cached?.userAvatar;
               return (
                 <Tooltip key={sess.sessionId} title={lastPreview} placement="right">
                   <div
@@ -229,10 +240,12 @@ export const SessionList: React.FC<SessionListProps> = ({
                     onClick={() => sess.sessionId && onSelectSession(sess.sessionId)}
                   >
                     <div className="agent-sidebar__item-row">
-                      <Avatar size="small" icon={<UserOutlined />} />
-                      <span className="agent-sidebar__item-name">
-                        用户 {sess.clientId?.slice(-4) || '?'}
-                      </span>
+                      <Avatar
+                        size="small"
+                        src={displayAvatar}
+                        icon={<UserOutlined />}
+                      />
+                      <span className="agent-sidebar__item-name">{displayName}</span>
                     </div>
                     <div className="agent-sidebar__item-msg">{lastPreview}</div>
                     <div className="agent-sidebar__item-row agent-sidebar__item-meta">

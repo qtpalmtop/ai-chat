@@ -33,6 +33,7 @@ import type {
   HistorySessionDetail,
 } from '@/types/agent';
 import type { Message, MessagePart } from '@/types/message';
+import { mergeMessagesById, sortMessagesByServerTime } from '@/utils/messageSort';
 
 interface AgentState {
   // ===== 当前激活的身份模式 =====
@@ -120,6 +121,7 @@ const emptyWorkbench: AgentWorkbench = {
   pendingQueue: [],
   suggestions: {},
   streamingIntent: {},
+  userInfoByClient: {},
   presence: { onlineAgents: 0, queueLength: 0 },
   connection: 'idle',
 };
@@ -222,7 +224,7 @@ export const useAgentStore = create<AgentState>()(
       sendClientMessage: (parts) => {
         const { clientSession } = get();
         if (clientSession.status !== 'inSession') return null;
-        const messageId = `msg_${Date.now()}_${nanoid(6)}`;
+        const messageId = `m_${nanoid(12)}`;
         // 乐观追加：先加入本地列表，收到 server 转发时再按 id 去重
         const message: Message = {
           id: messageId,
@@ -260,7 +262,7 @@ export const useAgentStore = create<AgentState>()(
         void clientId;
       },
       sendAgentMessage: (sessionId, parts) => {
-        const messageId = `msg_${Date.now()}_${nanoid(6)}`;
+        const messageId = `m_${nanoid(12)}`;
         const message: Message = {
           id: messageId,
           sessionId,
@@ -393,12 +395,14 @@ export const useAgentStore = create<AgentState>()(
                 },
               }));
             } else if (mode === 'agent') {
-              // 客服端：新建 activeSession（clientId 由后续 message 事件补全）
+              // 客服端：新建 activeSession
+              // 关键：直接用事件里的 clientId / userName / userAvatar 填入，
+              // 不再等后续 message 事件补全——否则 UI 会立刻显示"用户 未知 / ?"
               set((state) => {
                 if (state.workbench.activeSessions[event.sessionId]) return state; // 已有
                 const newSession: AgentSession = {
                   sessionId: event.sessionId,
-                  clientId: '',
+                  clientId: event.clientId || '',
                   status: 'inSession',
                   queuePosition: null,
                   estimatedWaitSec: null,
@@ -420,6 +424,18 @@ export const useAgentStore = create<AgentState>()(
                       ...state.workbench.activeSessions,
                       [event.sessionId]: newSession,
                     },
+                    // 同时把 userName / userAvatar 存到 userInfo 缓存（让"用户 ？/未知"显示真实名字）
+                    ...(event.userName || event.userAvatar
+                      ? {
+                          userInfoByClient: {
+                            ...(state.workbench.userInfoByClient || {}),
+                            [event.clientId || event.sessionId]: {
+                              userName: event.userName,
+                              userAvatar: event.userAvatar,
+                            },
+                          },
+                        }
+                      : {}),
                   },
                 };
               });
@@ -513,9 +529,7 @@ export const useAgentStore = create<AgentState>()(
                 // 用户能完整看到这段历史（与正常消息混排），
                 // 而不是只在输入区看到一个占位提示
                 const sysMsg: Message = {
-                  id: `sys_ended_${Date.now().toString(36)}_${Math.random()
-                    .toString(36)
-                    .slice(2, 6)}`,
+                  id: `sys_${nanoid(12)}`,
                   sessionId: state.clientSession.sessionId || '',
                   role: 'system',
                   status: 'done',
@@ -553,15 +567,103 @@ export const useAgentStore = create<AgentState>()(
             break;
           }
           case 'session_restored': {
-            if (mode !== 'client') return;
-            set((state) => ({
-              clientSession: {
-                ...state.clientSession,
-                status: 'inSession',
-                messages: event.messages,
-                startedAt: state.clientSession.startedAt || Date.now(),
-              },
-            }));
+            // 服务端在两种场景下推 session_restored：
+            //   1) client 重连：恢复 clientSession.messages
+            //   2) agent 重连：对它负责的每个活跃会话分别推一条 session_restored（带 sessionId）
+            // 用 mergeMessagesById 合并：保留乐观追加但还没收到 ack 的消息，去重服务端已有的
+            if (mode === 'client') {
+              set((state) => ({
+                clientSession: {
+                  ...state.clientSession,
+                  status: 'inSession',
+                  // 保留 clientId（不要重置，断线重连不应影响 client 身份）
+                  clientId: state.clientSession.clientId || state.clientUserId || '',
+                  // sessionId 取 event.sessionId（带的话）否则用现有的
+                  sessionId: event.sessionId || state.clientSession.sessionId,
+                  messages: mergeMessagesById(
+                    state.clientSession.messages,
+                    event.messages,
+                  ),
+                  startedAt: state.clientSession.startedAt || Date.now(),
+                },
+              }));
+            } else if (mode === 'agent' && event.sessionId) {
+              set((state) => {
+                const existing = state.workbench.activeSessions[event.sessionId!];
+                if (existing) {
+                  // 已有：merge 消息（保留本地的"草稿/未提交"消息）
+                  return {
+                    workbench: {
+                      ...state.workbench,
+                      activeSessions: {
+                        ...state.workbench.activeSessions,
+                        [event.sessionId!]: {
+                          ...existing,
+                          messages: mergeMessagesById(existing.messages, event.messages),
+                        },
+                      },
+                    },
+                  };
+                }
+                // 没有：新建（客服断线重连前已 queue_assigned 但还没 session_restored 的会话）
+                // 注意：clientId / userName / userAvatar 等需要从其他来源补，
+                // 暂时只填 messages，让 UI 显示"未知用户"——但这种情况几乎不会发生
+                // （agent 不会在没有 userName 的情况下被分配）
+                const newSession: AgentSession = {
+                  sessionId: event.sessionId!,
+                  clientId: '',
+                  status: 'inSession',
+                  queuePosition: null,
+                  estimatedWaitSec: null,
+                  queueReason: null,
+                  agent: {
+                    agentId: state.agentId || '',
+                    agentName: state.agentName || '',
+                    agentAvatar: state.agentAvatar ?? undefined,
+                  },
+                  messages: sortMessagesByServerTime(event.messages),
+                  startedAt: Date.now(),
+                  endedAt: null,
+                  endReason: null,
+                };
+                return {
+                  workbench: {
+                    ...state.workbench,
+                    activeSessions: {
+                      ...state.workbench.activeSessions,
+                      [event.sessionId!]: newSession,
+                    },
+                  },
+                };
+              });
+            } else if (mode === 'agent' && !event.sessionId) {
+              // 兼容老版本：event.sessionId 缺失时
+              // 找到 agent 唯一的 inSession 会话（agent 只有一个 active session 的场景）
+              set((state) => {
+                const sessionIds = Object.keys(state.workbench.activeSessions);
+                const targetId = sessionIds.find(
+                  (sid) =>
+                    state.workbench.activeSessions[sid]?.status === 'inSession' &&
+                    state.workbench.activeSessions[sid]?.agent?.agentId === state.agentId,
+                );
+                if (!targetId) return state;
+                return {
+                  workbench: {
+                    ...state.workbench,
+                    activeSessions: {
+                      ...state.workbench.activeSessions,
+                      [targetId]: {
+                        ...state.workbench.activeSessions[targetId],
+                        messages: mergeMessagesById(
+                          state.workbench.activeSessions[targetId].messages,
+                          event.messages,
+                        ),
+                      },
+                    },
+                  },
+                };
+              });
+            }
             break;
           }
 

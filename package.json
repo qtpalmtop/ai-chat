@@ -4,16 +4,27 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n http,ws -c blue,green \"node server/index.js\" \"node server/agent-ws.js\"",
-    "dev:http": "node server/index.js",
-    "dev:ws": "node server/agent-ws.js",
-    "server": "node server/index.js",
+    "dev": "concurrently -k -n nest,react,vue -c blue,green,magenta \"npm:dev:nest:run\" \"npm:dev:react\" \"npm:dev:vue\"",
+    "dev:react": "vite",
+    "dev:vue": "cd vue-version && vite",
+    "dev:nest:run": "cd server-nest && npm run start:dev",
+    "dev:http": "echo 'use dev:nest instead - 整个服务现已在 NestJS 3001 端口'",
+    "dev:ws": "echo 'use dev:nest instead - WebSocket 已集成在 NestJS 3001 端口'",
+    "server": "echo 'use dev:nest instead - 整个服务现已在 NestJS 3001 端口'",
     "build:client": "vite build --outDir dist/client",
     "build:server": "vite build --ssr src/entry-server.tsx --outDir dist/server",
     "build": "npm run build:client && npm run build:server",
     "start": "NODE_ENV=production node server/index.js",
     "preview": "npm run start",
-    "check": "tsc -b --noEmit"
+    "check": "tsc --noEmit",
+    "dev:nest": "cd server-nest && npm run dev",
+    "build:nest": "cd server-nest && npm run build",
+    "start:nest": "cd server-nest && npm run start:prod",
+    "db:up": "cd server-nest && npm run db:up",
+    "db:down": "cd server-nest && npm run db:down",
+    "db:reset": "cd server-nest && npm run db:reset",
+    "seed": "cd server-nest && npm run seed",
+    "test:e2e:nest": "cd server-nest && npm run test:e2e"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.1",
@@ -29,6 +40,7 @@
     "rehype-highlight": "^7.0.0",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.0",
+    "socket.io-client": "^4.8.3",
     "ws": "^8.21.3",
     "zustand": "^4.5.5"
   },
@@ -38,6 +50,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.2",
     "concurrently": "^9.0.1",
+    "puppeteer-core": "^22.15.0",
     "typescript": "^5.6.2",
     "vite": "^5.4.8"
   }

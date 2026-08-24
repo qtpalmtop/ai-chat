@@ -234,7 +234,10 @@ app.use(async (ctx) => {
   }
 });
 
-app.listen(PORT, () => {
+// 显式监听 0.0.0.0：不传 host 时 Node 默认只监听 IPv6 ::1，
+// macOS 上 LAN 真机会连不上。Vue Vite 已经在 vite.config.ts 里
+// 设了 server.host=true，这里 Koa 也保持一致。
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`[vue-koa-ssr] listening on http://localhost:${PORT}`);
   console.log(`[vue-koa-ssr] mode: ${isProd ? 'production' : 'development'}`);
   console.log(`[vue-koa-ssr] try: curl 'http://localhost:${PORT}/api/chat/sse?prompt=hi'`);

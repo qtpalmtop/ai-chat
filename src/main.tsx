@@ -20,6 +20,7 @@
 import { hydrateRoot, createRoot } from 'react-dom/client';
 import App from './App';
 import './index.css';
+import './styles/mobile.css';
 
 const rootEl = document.getElementById('root');
 if (!rootEl) {

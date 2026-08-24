@@ -245,7 +245,7 @@ const RESPONSES = {
           { index: 2, title: 'OpenAI Tools 规范', source: 'platform.openai.com', url: '#' },
         ],
       },
-      { type: 'markdown', content: '\n## 5. 数据图表（柱状图 + 饼图）' },
+      { type: 'markdown', content: '\n## 5. 数据图表（柱状图 + 饼图 + 雷达图）' },
       {
         type: 'chart',
         chartType: 'bar',
@@ -284,6 +284,149 @@ const RESPONSES = {
       },
     ],
   },
+
+  // 图片理解：拍照问答场景
+  '图片理解': {
+    parts: [
+      {
+        type: 'thinking',
+        content: '用户上传了一张街景照片，需要识别主体、文字、场景信息。',
+        durationMs: 1100,
+      },
+      {
+        type: 'image_understanding',
+        data: {
+          imageUrl: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=street%20scene%20with%20people%20walking%2C%20photorealistic%2C%20sunset%2C%20urban&image_size=square',
+          description: '这是一张城市街景照片，拍摄于傍晚的黄金时刻。画面中可以看到：\n\n- 主体：3 位行人正在人行道上行走，其中一位穿红色外套的女士推着购物车\n- 背景：远处有玻璃幕墙的写字楼，夕阳从右侧斜射进来\n- 文字：左侧店铺招牌上写着 "COFFEE & TEA"\n- 整体氛围：温暖、悠闲的傍晚购物时段',
+          tags: ['街景', '傍晚', '城市', '行人', '夕阳', '购物'],
+          followUpQuestions: [
+            '这是哪个城市的街景？',
+            '帮我用英文描述这张图片',
+            '给这张图片写一段小红书文案',
+          ],
+        },
+      },
+      {
+        type: 'suggestion',
+        items: [
+          '帮我写一段配图文案',
+          '识别图片中的所有文字',
+          '分析这张图的摄影参数',
+        ],
+      },
+    ],
+  },
+
+  // 文件解析：PDF/Word 总结
+  '文件解析': {
+    parts: [
+      { type: 'markdown', content: '已解析你上传的文档，下面是结构化摘要：' },
+      {
+        type: 'file_parsed',
+        data: {
+          name: '2024 年度营收分析报告.pdf',
+          pages: 24,
+          summary: '本文档分析了 2024 全年公司营收情况。Q1 受春节影响营收 1.2 亿；Q2 增长至 1.45 亿，主要由新产品发布驱动；Q3 达到 1.68 亿；Q4 增长至 1.92 亿，YoY 增长 51%。同时分析了各业务线占比、海外市场拓展情况。',
+          keyPoints: [
+            'Q4 营收 1.92 亿，同比增长 51%',
+            '海外市场营收占比从 12% 提升至 23%',
+            '新产品线贡献 35% 的增量营收',
+            '建议 2025 Q1 重点投入：海外渠道、新产品迭代',
+          ],
+          durationMs: 1850,
+        },
+      },
+      {
+        type: 'suggestion',
+        items: [
+          '对比 2023 年同期数据',
+          '把报告核心摘要翻译成英文',
+          '基于这份报告生成 5 页 PPT 大纲',
+        ],
+      },
+    ],
+  },
+
+  // 时间线：项目里程碑
+  '时间线': {
+    parts: [
+      { type: 'markdown', content: '这是产品 V2.0 的关键里程碑时间线：' },
+      {
+        type: 'timeline',
+        title: '产品 V2.0 关键节点',
+        events: [
+          { time: '2024-09', title: '需求评审', description: '完成 PRD 评审与设计稿评审', status: 'done' },
+          { time: '2024-10', title: '技术方案', description: '完成架构设计与技术选型', status: 'done' },
+          { time: '2024-11', title: '开发联调', description: '前后端联调、接口对齐', status: 'done' },
+          { time: '2024-12', title: '内部灰度', description: '内部员工灰度测试与 Bug 修复', status: 'current' },
+          { time: '2025-01', title: '正式发布', description: '对外发布 + 推广', status: 'planned' },
+        ],
+      },
+      {
+        type: 'suggestion',
+        items: [
+          '分析延期风险',
+          '为每个节点分配负责人',
+          '导出时间线为 Markdown',
+        ],
+      },
+    ],
+  },
+
+  // 任务清单：代办计划
+  '任务清单': {
+    parts: [
+      { type: 'markdown', content: '这是启动新项目的完整代办清单：' },
+      {
+        type: 'task_list',
+        title: '新项目启动 10 件事',
+        tasks: [
+          { label: '完成商业计划书', done: true },
+          { label: '注册公司主体', done: true },
+          { label: '完成产品 MVP', done: true },
+          { label: '组建核心团队（产品+研发+设计）', done: true },
+          { label: '首轮天使融资（300 万）', done: false },
+          { label: '招聘 3 名高级工程师', done: false },
+          { label: '对接第一批种子用户', done: false },
+          { label: '建立数据看板与指标体系', done: false },
+        ],
+      },
+      {
+        type: 'suggestion',
+        items: [
+          '把任务按四象限重新排序',
+          '为每个任务估算工时',
+          '导出任务清单为飞书多维表格',
+        ],
+      },
+    ],
+  },
+
+  // 雷达图：多维度对比
+  '雷达图': {
+    parts: [
+      { type: 'markdown', content: '下面用雷达图对比三款手机在 5 个维度上的表现（满分 100）：' },
+      {
+        type: 'chart',
+        chartType: 'radar',
+        title: 'iPhone 15 Pro / 华为 Mate 60 / 小米 14 Ultra 性能雷达',
+        data: {
+          labels: ['性能', '拍照', '续航', '屏幕', '系统流畅'],
+          values: [95, 92, 88, 94, 96],
+        },
+      },
+      { type: 'markdown', content: '\n下面是另一组数据（华为 Mate 60 Pro）：' },
+      {
+        type: 'chart',
+        chartType: 'radar',
+        title: '华为 Mate 60 Pro 性能雷达',
+        data: {
+          labels: ['性能', '拍照', '续航', '屏幕', '系统流畅'],
+          values: [88, 90, 95, 87, 85],
+        },
+      },
+    ],
+  },
 };
 
 /** 关键词 → 场景映射 */
@@ -296,15 +439,83 @@ const SCENARIOS = [
   { re: /天气|weather|温度/, key: 'weather' },
   { re: /图表|chart|可视化|占比|销量|营收|销售/, key: 'chart' },
   { re: /手机|iphone|华为|小米|对比|选哪款|旗舰/, key: 'phone' },
+  { re: /拍照|图片理解|看图|识别图片|image|photo/, key: '图片理解' },
+  { re: /文件解析|解析|pdf|word|文档/, key: '文件解析' },
+  { re: /时间线|里程碑|roadmap|节点/, key: '时间线' },
+  { re: /任务|代办|todo|清单|checklist/, key: '任务清单' },
+  { re: /雷达|radar|多维度/, key: '雷达图' },
 ];
 
-/** 决策：prompt → 返回 parts 数组（MessagePart[]） */
-export function pickResponse(prompt) {
+/** 决策：prompt → 返回 parts 数组（MessagePart[]）
+ * skill 注入：在用户已选中的 Skill 场景下，给响应追加符合该 Skill 形态的卡片
+ *   - thinking → 强制加一段思维链
+ *   - web      → 强制加一组引用来源
+ *   - translate→ 把 markdown 包成一个"翻译结果"code 块
+ */
+export function pickResponse(prompt, skill = '') {
   const p = (prompt || '').toLowerCase();
   for (const s of SCENARIOS) {
-    if (s.re.test(p)) return RESPONSES[s.key];
+    if (s.re.test(p)) {
+      return wrapBySkill(RESPONSES[s.key], skill, p);
+    }
   }
-  return RESPONSES.default;
+  return wrapBySkill(RESPONSES.default, skill, p);
+}
+
+/** 根据 skill 注入额外卡片（仅当用户当前激活的 Skill 与该 prompt 匹配时） */
+function wrapBySkill(base, skill, prompt) {
+  if (!skill || !base) return base;
+  const parts = [...(base.parts || [])];
+  if (skill === 'thinking') {
+    // 已在 prompt 中显式提到"思考/CoT"则不重复注入
+    if (!/思考|think|cot|深度|推理/.test(prompt)) {
+      parts.unshift({
+        type: 'thinking',
+        content: '用户启用了"深度思考"模式。我需要拆解问题、列出关键步骤，再给出最终答案。\n1. 识别用户意图\n2. 拆解为子问题\n3. 逐个解决\n4. 综合输出',
+        durationMs: 1200,
+      });
+    }
+  } else if (skill === 'web') {
+    // 联网搜索：追加一组引用来源
+    parts.push({
+      type: 'citation',
+      sources: [
+        { index: 1, title: '2025 AI 行业趋势报告', source: 'example.com', url: 'https://example.com' },
+        { index: 2, title: 'Gartner 2025 Hype Cycle', source: 'gartner.com', url: 'https://gartner.com' },
+        { index: 3, title: '斯坦福 AI Index 2025', source: 'stanford.edu', url: 'https://stanford.edu' },
+      ],
+    });
+  } else if (skill === 'translate') {
+    // 翻译：把文字包成 code 块，并加建议追问
+    const out = [];
+    for (const p of parts) {
+      if (p.type === 'markdown' || p.type === 'text') {
+        out.push({ type: 'code', language: 'translation', filename: '译文', content: p.content });
+      } else {
+        out.push(p);
+      }
+    }
+    out.push({
+      type: 'suggestion',
+      items: ['翻译得更正式一点', '换成商务口吻', '用通俗易懂的版本'],
+    });
+    return { ...base, parts: out };
+  } else if (skill === 'analyst') {
+    // 数据分析：若响应里没有 chart，自动追加一个
+    if (!parts.some((p) => p.type === 'chart')) {
+      parts.push({
+        type: 'chart',
+        chartType: 'bar',
+        title: '默认分析视图',
+        data: {
+          labels: ['A', 'B', 'C', 'D', 'E'],
+          values: [42, 67, 38, 91, 55],
+          unit: '',
+        },
+      });
+    }
+  }
+  return { ...base, parts };
 }
 
 /** 兼容旧调用：parts → 单段 markdown 字符串（用于拆分 chunk 推送） */

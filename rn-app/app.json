@@ -1,0 +1,71 @@
+{
+  "expo": {
+    "name": "AI Tools",
+    "slug": "ai-tools",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#4d6bfe"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.aitools.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "用于为您提供附近工具推荐",
+        "NSCameraUsageDescription": "用于拍摄上传图片到 AI 助手",
+        "NSPhotoLibraryUsageDescription": "用于选择相册图片上传到 AI 助手",
+        "NSPhotoLibraryAddUsageDescription": "用于保存图片到相册"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4d6bfe"
+      },
+      "package": "com.aitools.app",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "RECEIVE_BOOT_COMPLETED"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "允许 AI Tools 访问您的相册以选择图片上传",
+          "cameraPermission": "允许 AI Tools 使用相机拍摄图片"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "允许 AI Tools 使用您的位置以提供附近工具推荐"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#4d6bfe"
+        }
+      ]
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "your-eas-project-id"
+      }
+    }
+  }
+}

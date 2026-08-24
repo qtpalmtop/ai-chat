@@ -5,7 +5,7 @@
  *   以及对齐豆包的高阶卡片：思维链 / 引用来源 / 代码块 / 图表 / 追问 / 工具调用 / 对比卡
  */
 
-export type MessageRole = 'user' | 'assistant' | 'system';
+export type MessageRole = 'user' | 'assistant' | 'agent' | 'system';
 
 export type MessageStatus =
   | 'pending' // 排队中
@@ -61,6 +61,57 @@ export interface FunctionCallPart {
   result?: unknown;
   status: 'pending' | 'running' | 'done' | 'error';
   errorMessage?: string;
+  /** 已重试次数（用于展示，最多 3 次） */
+  retries?: number;
+  /** 工具描述（鼠标悬停展示） */
+  description?: string;
+}
+
+/** 图片理解：豆包"拍照问答"场景的回复卡片 */
+export interface ImageUnderstanding {
+  /** 用户上传的图片 url */
+  imageUrl: string;
+  /** AI 对图片的整体描述（OCR / 主体识别） */
+  description: string;
+  /** 抽取出的关键信息/标签 */
+  tags?: string[];
+  /** 进一步可问的问题（推荐追问子集） */
+  followUpQuestions?: string[];
+}
+
+/** 文件解析：豆包"PDF/Word 总结"场景的回复卡片 */
+export interface FileParsed {
+  /** 原始文件名 */
+  name: string;
+  /** 文件总页数（PDF / Word 等） */
+  pages?: number;
+  /** 提取出的关键摘要 */
+  summary: string;
+  /** 关键要点列表 */
+  keyPoints: string[];
+  /** 解析耗时（毫秒） */
+  durationMs?: number;
+}
+
+/** 时间线卡片：豆包风格的"事件发展顺序"展示 */
+export interface TimelineEvent {
+  /** 时间/阶段标签，如 "2024-Q1" / "Phase 1" */
+  time: string;
+  title: string;
+  description?: string;
+  /** 状态：完成 / 进行中 / 计划中 */
+  status?: 'done' | 'current' | 'planned';
+}
+
+/** 任务清单：豆包"代办计划"风格的进度卡片 */
+export interface TaskItem {
+  label: string;
+  done: boolean;
+}
+
+/** 图片组：多张图轮播 */
+export interface ImageGroup {
+  images: { url: string; alt?: string; caption?: string }[];
 }
 
 // ============== Part 联合类型 ==============
@@ -71,15 +122,20 @@ export type MessagePart =
   | { type: 'markdown'; content: string }
   | { type: 'rich'; html: string }
   | { type: 'image'; url: string; alt?: string; caption?: string }
+  | { type: 'image_group'; data: ImageGroup }
   | { type: 'file'; name: string; size: number; url: string; mime?: string }
   // -------- 以下为对齐豆包扩展的高阶卡片 --------
   | { type: 'thinking'; content: string; durationMs?: number } // 思维链：可折叠的"深度思考"
   | { type: 'citation'; sources: CitationSource[] } // 引用来源：搜索结果出处
   | { type: 'code'; language: string; content: string; filename?: string } // 独立代码块卡片
-  | { type: 'chart'; chartType: 'bar' | 'line' | 'pie'; title?: string; data: ChartData } // 数据图表
+  | { type: 'chart'; chartType: 'bar' | 'line' | 'pie' | 'radar'; title?: string; data: ChartData } // 数据图表
   | { type: 'suggestion'; items: string[] } // 推荐追问 chip 列表
   | { type: 'function_call'; call: FunctionCallPart } // 工具调用（Function Calling）
-  | { type: 'comparison'; title?: string; items: ComparisonItem[] }; // 对比卡（多列对照）
+  | { type: 'comparison'; title?: string; items: ComparisonItem[] } // 对比卡（多列对照）
+  | { type: 'image_understanding'; data: ImageUnderstanding } // 图片理解（拍照问答）
+  | { type: 'file_parsed'; data: FileParsed } // 文件解析摘要（PDF/Word 总结）
+  | { type: 'timeline'; title?: string; events: TimelineEvent[] } // 时间线（事件发展）
+  | { type: 'task_list'; title?: string; tasks: TaskItem[] }; // 任务清单（含进度）
 
 /** 一条完整消息 */
 export interface Message {
@@ -123,14 +179,19 @@ export type SSEPayload =
   | { type: 'text'; content: string }
   | { type: 'markdown'; content: string }
   | { type: 'image'; url: string; alt?: string; caption?: string }
+  | { type: 'image_group'; data: ImageGroup }
   | { type: 'file'; name: string; size: number; url: string; mime?: string }
   | { type: 'thinking'; content: string; durationMs?: number }
   | { type: 'citation'; sources: CitationSource[] }
   | { type: 'code'; language: string; content: string; filename?: string }
-  | { type: 'chart'; chartType: 'bar' | 'line' | 'pie'; title?: string; data: ChartData }
+  | { type: 'chart'; chartType: 'bar' | 'line' | 'pie' | 'radar'; title?: string; data: ChartData }
   | { type: 'suggestion'; items: string[] }
   | { type: 'function_call'; call: FunctionCallPart }
   | { type: 'comparison'; title?: string; items: ComparisonItem[] }
+  | { type: 'image_understanding'; data: ImageUnderstanding }
+  | { type: 'file_parsed'; data: FileParsed }
+  | { type: 'timeline'; title?: string; events: TimelineEvent[] }
+  | { type: 'task_list'; title?: string; tasks: TaskItem[] }
   | { type: 'done'; messageId: string }
   | { type: 'error'; message: string };
 

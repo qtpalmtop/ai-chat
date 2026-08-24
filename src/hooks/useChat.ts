@@ -108,7 +108,7 @@ export function useChat() {
     }
 
     const userMsg: Message = {
-      id: nanoid(10),
+      id: nanoid(12),
       sessionId,
       role: 'user',
       parts: userParts,
@@ -126,7 +126,7 @@ export function useChat() {
     }
 
     // 5) 创建占位 AI 消息（status: 'streaming' 即为"正在生成"的唯一真值源）
-    const aiMsgId = nanoid(10);
+    const aiMsgId = nanoid(12);
     state.appendMessage(sessionId, {
       id: aiMsgId,
       sessionId,
@@ -281,6 +281,22 @@ export function useChat() {
             break;
           case 'comparison':
             onNonTextBoundary({ type: 'comparison', title: payload.title, items: payload.items });
+            break;
+          // ===== 对齐豆包进一步扩展 =====
+          case 'image_group':
+            onNonTextBoundary({ type: 'image_group', data: payload.data });
+            break;
+          case 'image_understanding':
+            onNonTextBoundary({ type: 'image_understanding', data: payload.data });
+            break;
+          case 'file_parsed':
+            onNonTextBoundary({ type: 'file_parsed', data: payload.data });
+            break;
+          case 'timeline':
+            onNonTextBoundary({ type: 'timeline', title: payload.title, events: payload.events });
+            break;
+          case 'task_list':
+            onNonTextBoundary({ type: 'task_list', title: payload.title, tasks: payload.tasks });
             break;
           // 'done' 走单独事件，不在这里处理
         }

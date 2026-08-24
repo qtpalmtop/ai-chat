@@ -19,6 +19,7 @@ import { Avatar, Tooltip, Button, App, Space } from 'antd';
 import {
   UserOutlined,
   RobotOutlined,
+  CustomerServiceOutlined,
   CopyOutlined,
   CloseCircleOutlined,
   LikeOutlined,
@@ -83,16 +84,24 @@ const MessageItemImpl: React.FC<Props> = ({ message, onCopy, onSuggestionPick, o
   }
 
   const isUser = message.role === 'user';
-  const isAiDone = !isUser && message.status === 'done';
+  const isAgent = message.role === 'agent';
+  const isAssistant = message.role === 'assistant';
+  const isAiDone = isAssistant && message.status === 'done';
 
   // AI 消息：合并所有 markdown part 作为已渲染内容
   // 非 markdown/text part（图片、文件、富文本/思维链/引用/代码/图表/追问/工具调用/对比）单独渲染
   // 排除 'text' 是因为 user 的纯文本由下方独立块渲染，避免 PartRenderer 二次渲染造成重复
+  //
+  // ⚠️ 但 agent（客服）消息的 parts 几乎都是 text：客服发普通对话时只 push text part，
+  // 不会被 userText 命中（userText 只对 isUser 渲染），也不会进 otherParts（被显式排除），
+  // 也不会进 aiMarkdown（这里只收 markdown）→ 文字直接消失。
+  // 解法：对 agent 角色把 text 也合并到 aiMarkdown 里（用 MarkdownStream 渲染纯文本 OK）。
   const { aiMarkdown, otherParts } = useMemo(() => {
     let md = '';
     const others: MessagePart[] = [];
+    const includeText = message.role === 'agent';
     for (const p of message.parts) {
-      if (p.type === 'markdown') {
+      if (p.type === 'markdown' || (includeText && p.type === 'text')) {
         md += (md ? '\n\n' : '') + p.content;
       } else if (p.type !== 'text') {
         others.push(p);
@@ -112,8 +121,13 @@ const MessageItemImpl: React.FC<Props> = ({ message, onCopy, onSuggestionPick, o
   );
 
   return (
-    <div className={`msg ${isUser ? 'msg--user' : 'msg--ai'}`}>
-      {!isUser && <Avatar className="msg__avatar msg__avatar--ai" icon={<RobotOutlined />} />}
+    <div className={`msg ${isUser ? 'msg--user' : isAgent ? 'msg--agent' : 'msg--ai'}`}>
+      {!isUser && (
+        <Avatar
+          className={`msg__avatar ${isAgent ? 'msg__avatar--agent' : 'msg__avatar--ai'}`}
+          icon={isAgent ? <CustomerServiceOutlined /> : <RobotOutlined />}
+        />
+      )}
       <div className="msg__bubble">
         {otherParts.length > 0 && (
           <div className="msg__parts">

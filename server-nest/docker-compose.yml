@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: doubao-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: doubao
+      POSTGRES_PASSWORD: doubao_pwd
+      POSTGRES_DB: doubao_ai
+      # 让 postgres 监听所有接口（容器内）
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    ports:
+      - "5432:5432"
+    volumes:
+      - doubao_pg_data:/var/lib/postgresql/data
+      # 首次启动时执行的 SQL（建扩展、时区等）
+      - ./scripts/init-pg.sql:/docker-entrypoint-initdb.d/init-pg.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doubao -d doubao_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  doubao_pg_data:
+    name: doubao_pg_data
